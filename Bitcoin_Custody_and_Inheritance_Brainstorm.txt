@@ -1,0 +1,352 @@
+BITCOIN CUSTODY, OFFLINE SIGNING, AND FAMILY INHERITANCE
+Research and architecture brainstorm — October 4, 2026
+
+The strongest idea is a custody system your family can recover even after you, your devices, and the wallet company are gone. That means designing theft resistance, backups, signing, and inheritance together.
+
+My starting point would be independently generated multisig keys, separate signing devices, durable backups, and a rehearsed family recovery process. More keys and more complexity aren't automatically more secure.
+
+This is an architecture brainstorm, not a code audit. The original X post could not be retrieved, so its contents have not been assumed. Source links are collected at the end. Product and project observations reflect the research retrieved for this discussion.
+
+1. WHAT I WOULD TAKE FROM YETI 2.0 AND ENTROPYLAB
+
+Yeti 2.0 documents a Bitcoin Core-based, 3-of-7 multisig workflow, with an online watch-only wallet, an offline computer, and optical-disc backups. Its spending instructions load three key wallets into the same offline computer. The retrieved guide also reconnects the live environment for software preparation before disabling networking and loading secrets. [1]
+
+The valuable ideas are replaceable computers, open recovery tools, and separation of online monitoring from signing.
+
+My concern is that three keys loaded into one computer share that computer's security. Multisig still provides storage redundancy, but compromise of that signing environment can reach the signing quorum. "Offline" and "independent" are different properties.
+
+For our design, I would borrow Yeti's recoverability while keeping each signing key on a separate device.
+
+EntropyLab offers offline derivation and inspection of seeds, public keys, descriptors, addresses, and recovery information. Its retrieved README explicitly warns against use with actual bitcoin and describes it as a calculator rather than a transaction signer. [2]
+
+Its useful inspiration is making wallet construction and recovery information inspectable. I would explore that with test seeds, without putting a real signing quorum through one calculator.
+
+2. THREE THINGS THAT OFTEN GET CONFUSED
+
+Multisig:
+  Requires several distinct keys to authorize spending.
+  Limitation: enough compromised keys can spend.
+
+Shamir backup, such as SLIP39:
+  Requires several shares to reconstruct one secret.
+  Limitation: once restored, that one signing key exists on a device.
+
+Air-gapped signing:
+  Reduces direct connectivity between secret keys and online systems.
+  Limitation: malicious firmware, hostile transaction data, and output channels remain possible.
+
+SLIP39 is a backup mechanism, not a replacement for independent multisig signing. [3]
+
+An air gap also doesn't prove that a device cannot leak secrets: malicious signatures can themselves carry information. Anti-klepto protocols address a particular signature-based leakage channel, provided the supporting wallet/device workflow actually uses them. [4]
+
+Design rule: Never let one device, one seed-generation session, or one backup location quietly become the master key to the entire system.
+
+For example, deriving every multisig participant from one BIP85 parent creates a shared root of compromise. BIP85 can derive multiple wallets, but possession of that parent defeats the intended independence. [5]
+
+3. THE PRACTICAL FOUNDATION I WOULD EXPLORE
+
+2-of-3 multisig:
+  Theft threshold: two keys.
+  Complete key losses tolerated: one.
+  Operational burden: moderate.
+
+3-of-5 multisig:
+  Theft threshold: three keys.
+  Complete key losses tolerated: two.
+  Operational burden: higher.
+
+The loss tolerances assume the remaining keys and complete wallet configuration survive.
+
+My default candidate is 2-of-3 using independent keys and geographically separated backups. I would consider 3-of-5 when the people involved can reliably maintain and rehearse it.
+
+The baseline would have:
+- An online, watch-only coordinator for balances and transaction preparation.
+- A Bitcoin Core node for independent chain validation.
+- Separate offline signing devices.
+- A durable backup for each key, with no location holding enough material to spend.
+- Complete wallet configuration backups.
+- A family recovery process that works without the original coordinator or service.
+
+Bitcoin Core documents both multisig and offline PSBT workflows. PSBT is the standard transaction package that lets separate signers inspect and sign without needing their private keys on the online computer. [6–8]
+
+The online node can be replaced. The coordinator can be replaced. A broken signer can be replaced. The secrets and recovery information are what must survive.
+
+4. HARDWARE APPROACHES WORTH BORROWING FROM
+
+These are design candidates, not claims that any current device is flawless.
+
+SeedSigner:
+  Interesting features: DIY, stateless signing with QR communication.
+  Trade-off: repeated seed loading makes handling the physical backup part of every signing session. [9]
+
+Krux:
+  Interesting features: commodity hardware, QR/SD signing, single-sig and multisig support.
+  Trade-off: hardware selection and firmware verification become the owner's responsibility. [10]
+
+Specter-DIY:
+  Interesting features: open DIY signer architecture and documented security model.
+  Trade-off: physical security depends on the exact hardware and configuration. [11]
+
+Jade:
+  Interesting features: QR signing and a stateless mode that can operate without its blind oracle.
+  Trade-off: persistent PIN mode and stateless mode have different dependencies. [12]
+
+COLDCARD:
+  Interesting features: extensive multisig, address verification, and removable-media workflows.
+  Trade-off: exact firmware and seed provenance matter. [13]
+
+BitBox02:
+  Interesting features: registered multisig policies and anti-klepto support.
+  Trade-off: its connected workflow differs from a strictly air-gapped design. [14]
+
+One current finding matters to this discussion: COLDCARD's official security page reports a seed-generation incident and explicitly says updating firmware does not repair an already affected seed. Any concrete design using it must account for the seed's history, not just the device model or current firmware. [15]
+
+My architectural preference is diversity across the signing quorum, with independently generated keys. Two brands that share important software dependencies aren't necessarily fully independent, but diversity can reduce common failures.
+
+I would not routinely scan several multisig seeds into the same stateless signer. That recreates the shared-computer problem.
+
+5. BACK UP THE WALLET'S MAP AS CAREFULLY AS ITS KEYS
+
+A multisig seed backup alone is not a complete wallet backup. Recovery can require the other participants' public keys and the precise spending policy. Unchained's external-recovery documentation explicitly requires the wallet configuration alongside the necessary keys. [16]
+
+I would create a recovery package containing:
+
+- Public receive and change descriptors: reconstructs the addresses and spending rules.
+- All cosigner public keys, origins, and derivation paths: identifies how the wallet was constructed.
+- Threshold and script type: records the authorization rule.
+- Wallet creation date/block and address-range information: helps a replacement wallet find historical funds.
+- Several independently verified addresses: provides recovery cross-checks.
+- Human-readable instructions and compatible software details: lets another person execute the process.
+- Key-location and succession instructions, stored appropriately: explains how authorized people obtain the required keys.
+
+Use public-only descriptors for the non-secret package. Descriptors can also contain private keys, so "descriptor" does not automatically mean safe to distribute. Public descriptors still expose financial privacy. [17]
+
+For physical durability, I would combine human-readable metal key backups with redundant paper and digital configuration records. Optical discs can be another copy; I would not make an heir's success depend on one disc, one reader, or one obscure file format.
+
+Passphrases need the same recovery discipline. A passphrase that exists only in the owner's memory is an inheritance failure waiting to happen.
+
+6. COLLABORATIVE CUSTODY: THE PROVIDER MUST BE REPLACEABLE
+
+The providers contribute different combinations of cosigning, recovery assistance, identity checks, and inheritance support.
+
+Unchained:
+  Standard 2-of-3 structure: client holds two keys, provider holds one.
+  Test: can the family recover with the client-held keys and configuration if Unchained disappears? [18]
+
+Casa:
+  Managed multisig and inheritance workflows.
+  Test: can heirs obtain enough non-Casa keys and perform sovereign recovery? [19]
+
+Nunchuk:
+  Both service-enforced and on-chain timelock inheritance approaches.
+  Test: which exact dependency remains in the selected plan? [20]
+
+Liana:
+  Primary spending paths plus timelocked recovery paths.
+  Test: can the family recover, and can the owner maintain the timelocks? [21]
+
+Their offerings should not be treated as interchangeable.
+
+My requirement: the provider can make recovery easier, but its disappearance must not make recovery impossible.
+
+That needs testing for the heirs too. A system that is recoverable without the provider only while the owner is alive has not solved inheritance.
+
+7. THE SIMPLEST INHERITANCE MODEL IS A REHEARSED HANDOVER
+
+For a conventional 2-of-3 vault, imagine:
+- Key A: owner's primary signer, with an independently stored backup.
+- Key B: owner's geographically separate reserve signer/backup.
+- Key C: a recovery partner or trusted guardian.
+
+The family has a documented succession route to A and B. C provides assistance if one is unavailable.
+
+That creates two recovery routes: A+B without the provider, or one surviving owner key plus C. The physical access arrangements must actually support those routes after death or incapacity.
+
+There is an unavoidable trade-off: any two people who can obtain two keys can spend, regardless of what the will says. Bitcoin checks signatures, not intentions. A plan must explicitly examine collusion, coercion, estrangement, and simultaneous deaths.
+
+I would rehearse an inheritance scenario with a separate small-value practice wallet:
+1. The owner is unavailable.
+2. One device has failed.
+3. The normal wallet website is unavailable.
+4. The family locates the instructions and configuration.
+5. They recover using an alternative coordinator.
+6. They move the practice funds into a newly controlled wallet.
+
+That exercise is more persuasive than a folder labelled "Bitcoin instructions."
+
+8. ON-CHAIN INHERITANCE IS POWERFUL, BUT NOT MAINTENANCE-FREE
+
+A more advanced policy could be:
+  The owner can spend with two of three owner keys at any time.
+  After a defined period, two of three family recovery keys can also spend.
+
+Liana supports primary and recovery paths using relative timelocks. These are enforced through Bitcoin's existing rules rather than a company promising to release a key. [21]
+
+But the clock applies to individual transaction outputs. Logging into an app does not reset it. Spending one coin does not reset the other coins. Refreshing requires confirmed on-chain transactions, with fees and time allowed for confirmation. [21–22]
+
+Once a recovery path becomes eligible, the owner's normal path generally still exists. There can be competing spends. The timelock doesn't detect death or automatically transfer the money.
+
+I would explore this for a portion of long-term holdings after rehearsal. I would avoid a design in which one unattended calendar deadline unexpectedly gives a single person access to everything.
+
+9. OUTSIDE-THE-BOX IDEAS
+
+Idea 1: A family recovery appliance
+
+A simple offline interface that guides someone through an already established policy:
+- Identify the wallet.
+- Verify the backup package.
+- Identify the available signers.
+- Prepare and explain a recovery transaction.
+- Collect signatures on separate devices.
+
+The interface would never need to collect the whole signing quorum's secrets. Its innovation would be reducing human mistakes using existing wallet standards.
+
+Idea 2: A recovery simulator that never sees private keys
+
+Enter roles, locations, and dependencies—not secrets—and ask:
+- What happens if the house burns down?
+- What if both spouses die together?
+- What if the provider closes?
+- What if a guardian refuses to cooperate?
+- What if two guardians collude?
+- What if someone loses their memory?
+
+The simulator would flag things like "one building contains enough backups to spend" or "every recovery route depends on the same person." This is a realistic tool we could build without inventing cryptography.
+
+Idea 3: A portable recovery package with independent readers
+
+Define an open, versioned format for the public configuration, verification addresses, and instructions. Maintain at least two independent implementations that can read it.
+
+The ambitious goal: an heir can recover decades later without finding the original app. Bitcoin descriptors and BSMS already provide useful foundations; we should extend the surrounding usability rather than invent a proprietary wallet format. [17,23]
+
+Idea 4: A guardian who assists but holds no spending key
+
+A technically competent helper can identify authentic software, explain instructions, and help the family coordinate separate signers without possessing seeds.
+
+This separates technical assistance from financial control. The helper could still mislead people, so destination verification remains essential, but compromise of the helper's records would not expose a spending key.
+
+Idea 5: A family liquidity wallet alongside the deep reserve
+
+Keep a limited emergency amount under a simpler, rehearsed arrangement. Give the main reserve stronger separation and slower recovery.
+
+The purpose is practical: grieving relatives should not have to solve the hardest recovery procedure immediately to cover ordinary expenses. The amount at risk in the simpler arrangement stays bounded.
+
+Idea 6: Backups whose integrity can be checked without electronics
+
+Codex32 is an interesting research direction. BIP93 describes error-detecting/correcting seed encoding and optional Shamir sharing, including hand-computable verification and recovery. [24]
+
+That could support long-lived physical archives. But it adds another format and workflow, so I would demand compatibility tests and family practice before considering it superior to familiar seed backups. It does not make spending independent of computers.
+
+Idea 7: Independent offline transaction inspection
+
+Explore a separate, keyless verifier that reads the transaction and the wallet's public policy, then independently displays the destination, fee, and change.
+
+This could help catch a compromised coordinator or misleading signer interface. It is an extra check, not an enforcement mechanism: it cannot stop a malicious device from exporting something different unless the exported transaction is also checked.
+
+10. WHAT I WOULD AVOID BUILDING THE FIRST VERSION AROUND
+
+- Custom cryptography or home-made seed splitting.
+- A master seed that derives every participant's key.
+- Loading every recovery secret into one "trusted" computer.
+- An email dead-man switch that releases spending secrets.
+- Essential backups encrypted under a password only the deceased knows.
+- Claims that a hardware wallet's spending limits are enforced by Bitcoin when they are only device/service policies.
+- Proposed consensus features presented as already available.
+
+For example, the retrieved BIP119 remains a draft; BIP345's OP_VAULT proposal is marked closed. Neither is a sound assumption for a presently deployable family vault. [25–26]
+
+PREFERRED FIRST CONCEPT
+
+Combine a conventional 2-of-3 vault, independent offline signers, durable key and configuration backups, and a family recovery simulator. Optional collaborative assistance could sit alongside it, with a tested exit route.
+
+The key acceptance test:
+Can the family recover after the owner is gone, one key is lost, and the original service is unavailable—without giving any single helper control?
+
+
+SOURCES AND PROJECT LINKS
+
+[1] Yeti 2.0 repository and guide
+https://github.com/bowlarbear/yeti-2.0
+
+[2] EntropyLab repository and README
+https://github.com/OogaBoogaX/entropylab
+https://github.com/OogaBoogaX/entropylab/blob/rock/README.md
+
+[3] SLIP39 specification
+https://github.com/satoshilabs/slips/blob/master/slip-0039.md
+
+[4] BitBox: Anti-klepto explained
+https://blog.bitbox.swiss/en/anti-klepto-explained-protection-against-leaking-private-keys/
+
+[5] BIP85: deterministic entropy from BIP32 keychains
+https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki
+
+[6] Bitcoin Core multisig tutorial
+https://github.com/bitcoin/bitcoin/blob/master/doc/multisig-tutorial.md
+
+[7] Bitcoin Core offline signing tutorial
+https://github.com/bitcoin/bitcoin/blob/master/doc/offline-signing-tutorial.md
+
+[8] BIP174: PSBT format
+https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki
+
+[9] SeedSigner
+https://seedsigner.com/
+https://seedsigner.com/seedsigner-independent-custody-guide/
+
+[10] Krux repository
+https://github.com/selfcustody/krux
+
+[11] Specter-DIY security model
+https://docs.specter.solutions/diy/security-model/
+
+[12] Jade stateless signing documentation
+https://blockstream.zendesk.com/hc/en-us/articles/20144489592857-Use-Jade-as-a-stateless-signing-device
+
+[13] COLDCARD multisig documentation
+https://coldcard.com/docs/multisig/
+https://coldcard.com/docs/airgap-multisig/
+
+[14] BitBox security features
+https://bitbox.swiss/bitbox02/security-features/
+
+[15] COLDCARD current security status
+https://coldcard.com/security/status
+
+[16] Unchained wallet configuration backup
+https://help.unchained.com/download-unchained-bitcoin-multisig-configuration-file
+
+[17] Bitcoin Core descriptors documentation
+https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md
+
+[18] Unchained network of keys
+https://www.unchained.com/features/bitcoin-network-of-keys
+
+[19] Casa sovereign recovery and inheritance
+https://support.casa.io/knowledge/what-happens-to-my-funds-if-casa-shuts-down
+https://casa.io/inheritance
+
+[20] Nunchuk inheritance models
+https://nunchuk.io/faq
+https://nunchuk.io/blog/autonomous-inheritance
+
+[21] Liana: managing recovery paths
+https://wizardsardine.com/blog/managing-recovery-paths-in-liana/
+
+[22] BIP68: relative locktimes
+https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki
+
+[23] BIP129: Bitcoin Secure Multisig Setup (BSMS)
+https://github.com/bitcoin/bips/blob/master/bip-0129.mediawiki
+
+[24] BIP93: Codex32
+https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki
+
+[25] BIP119: CHECKTEMPLATEVERIFY proposal
+https://github.com/bitcoin/bips/blob/master/bip-0119.mediawiki
+
+[26] BIP345: OP_VAULT proposal
+https://github.com/bitcoin/bips/blob/master/bip-0345.mediawiki
+
+Original inspiration link (not retrieved during research):
+https://x.com/mrhodl/status/2106514934570123438?s=46
