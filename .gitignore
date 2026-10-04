@@ -1,0 +1,19 @@
+# Safety: never commit a real plan, runbook, or letter — encrypted or not.
+# These files describe YOUR cold storage. They do not belong in git history.
+*.csp
+*.csp.json
+*.runbook.html
+*.runbook.txt
+*.sealed-letter.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Source archive provided for importing this project
+csip.zip
