@@ -8,19 +8,20 @@ best.
 
 Vault Folio authors the map to your cold storage. Run it only on a machine with
 **no path to any network**: no Wi-Fi, no Bluetooth, no Ethernet, no tethering.
-The native app checks the local routing table, wireless interfaces, and
-Bluetooth adapters at startup and during the session. It makes no external
-connectivity probes. These checks are best-effort and cannot prove physical
-isolation; inspect the machine yourself. The browser fallback makes no network
-requests, but browser APIs cannot verify physical isolation. Use it only on a
-machine you have physically air-gapped.
+The desktop app checks the local routing table, active network interfaces,
+wireless interfaces, and Bluetooth adapters at startup and during the session.
+It refuses to open if Wi-Fi or Bluetooth hardware is enumerated, a network
+route or active interface exists, or any check is unavailable. It makes no
+external connectivity probes and has no attestation override. These OS checks
+are not a proof against compromised firmware or a hostile operating system.
 
 ## Setups, worst to best
 
-**Acceptable** — your everyday machine, radios off:
-disable Wi-Fi and Bluetooth in the OS, unplug Ethernet, then run the app. When
-the OS won't let the app verify radio state, the gate will ask you to attest
-that wireless is disabled in firmware or physically absent. Attest honestly.
+**Acceptable** — a computer with radios physically removed or absent:
+disconnect Ethernet and all tethered/network adapters. The app will block if
+the operating system still reports Wi-Fi or Bluetooth hardware, any active
+network interface, or cannot determine the machine's state. Disabling a radio
+in the OS may not be sufficient because the device can remain enumerated.
 
 **Better** — a dedicated machine:
 an old laptop with wireless and Bluetooth disabled in BIOS/UEFI, used for
@@ -46,36 +47,32 @@ The app holds your plan in memory only. It never creates temp files, logs,
 caches, or config directories, and it suppresses Python's bytecode cache. The
 only disk writes are files you choose yourself in a Save dialog:
 
-- the encrypted plan (`*.csp.json`) — safe to copy widely;
-- the heir runbooks (`*.runbook.html`, `*.runbook.txt`) — contain no keys, but
-  they describe your setup's structure: treat them as sensitive paper;
-- the sealed letter (`*.sealed-letter.txt`) — print it, seal it, give it to
-  the trustee.
+- the encrypted plan (`*.csp.json`) — safe to copy widely, though it reveals
+  structure if the passphrase is also obtained.
 
-Export to removable media you control (a USB stick that then lives with the
-trustee, a printed runbook in the safe), not to cloud-synced folders.
+The app displays the decrypted heir guide in memory. It does not save an
+unencrypted runbook or letter.
+
+Save the encrypted plan to removable media you control (such as a USB stick
+held with the trustee), not to a cloud-synced folder.
 
 ## The passphrase road
 
 The encrypted file and its passphrase must never travel together. If the
 passphrase dies with you, the file is a brick. Recommended: sealed copy of the
-passphrase with the trustee, plus the sealed letter telling heirs who holds it.
-Memorized-only passphrases are a theft feature and an inheritance bug.
+passphrase with the trustee, plus separate instructions telling heirs who holds
+it. Memorized-only passphrases are a theft feature and an inheritance bug.
 
 ## After the session
 
 Shut the machine down. Don't sleep it — power it off. If you used a live USB,
 remove it and store it with the plan materials or wipe it.
 
-## Browser fallback limitations
+## Future recovery
 
-Browsers are designed to remember: history, caches, storage APIs, session
-restore, crash recovery, sync. A page that handles the map to your cold storage
-should not run inside an engine whose job is persistence. That is why Vault
-Folio is a native single-file app. The `fallback-viewer/` HTML is only an
-emergency decryptor for heirs, decades from now, if nothing else survives.
-Use it on a physically air-gapped machine, ideally from a live USB, and close
-the browser entirely afterwards.
+The encrypted JSON format is documented independently of the app. A future
+offline desktop program can implement the same KDF and cipher and render the
+plan without relying on a browser or this Python program.
 
 ## The human layer
 

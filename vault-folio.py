@@ -11,9 +11,9 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
   - Single file, standard-library GUI (tkinter). No browser engine, no web
     storage, no cookies, no caches — nothing persists in the background.
-  - Runs on Linux, macOS, and Windows. The air-gap gate reads real OS state
-    where the platform exposes it (routes, wireless interfaces, Bluetooth)
-    and falls back to a signed attestation where it cannot.
+  - Runs on Linux, macOS, and Windows. The air-gap gate fails closed unless
+    the OS reports no network route, no active network interface, and no Wi-Fi
+    or Bluetooth hardware.
   - RAM discipline: the app writes NOTHING to disk on its own — no temp
     files, no logs, no bytecode cache. The only writes are files YOU choose
     in a Save dialog. For a fully ephemeral session, run it from a live
@@ -21,10 +21,8 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
     ramdisk and run it from there.
   - Encryption: AES-256-GCM, key via PBKDF2-HMAC-SHA256 (600,000 rounds).
     Only external dependency: the `cryptography` package.
-  - File format is identical to the Vault Folio HTML edition — .csp.json
-    files open interchangeably in both. If this program is ever lost, any
-    machine with Python + cryptography can decrypt the file with the
-    envelope documented at the top of decrypt_plan().
+  - The encrypted JSON format is documented independently so other offline
+    applications can read the plan in the future.
 
 Requires: Python 3.9+, tkinter (python3-tk / included on macOS+Windows),
           cryptography  (pip install cryptography)
@@ -34,7 +32,6 @@ Run:      python3 vault-folio.py          (normal)
 
 import base64
 import glob
-import html as html_mod
 import json
 import os
 import platform
@@ -63,7 +60,7 @@ KDF_ITERATIONS = 600_000
 MAX_PLAN_BYTES = 10 * 1024 * 1024
 
 # --------------------------------------------------------------------------
-# Option vocabularies (identical to the HTML edition)
+# Questionnaire option vocabularies
 # --------------------------------------------------------------------------
 TIERS = ["Deep vault (no timelock)", "Family vault (timelocked decay allowed)",
          "Spending / liquidity wallet", "Collaborative custody slice"]
@@ -118,14 +115,19 @@ def blank_plan():
 
 
 # --------------------------------------------------------------------------
-# Crypto — byte-for-byte compatible with the HTML edition's envelope
+# Crypto — versioned and documented envelope
 # --------------------------------------------------------------------------
 def encrypt_plan(plan: dict, passphrase: str) -> dict:
+    if not isinstance(plan, dict):
+        raise ValueError("Plan must be a JSON object.")
+    plaintext = json.dumps(plan, ensure_ascii=False).encode("utf-8")
+    if len(plaintext) > MAX_PLAN_BYTES:
+        raise ValueError("Plan is too large to save.")
     salt = os.urandom(16)
     iv = os.urandom(12)
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=KDF_ITERATIONS)
     key = kdf.derive(passphrase.encode("utf-8"))
-    ct = AESGCM(key).encrypt(iv, json.dumps(plan).encode("utf-8"), None)
+    ct = AESGCM(key).encrypt(iv, plaintext, None)
     return {
         "magic": ENC_MAGIC,
         "kdf": {"name": "PBKDF2", "hash": "SHA-256", "iterations": KDF_ITERATIONS,
@@ -171,15 +173,15 @@ def decrypt_plan(env: dict, passphrase: str) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Air-gap gate — platform-aware. Reads real OS state where exposed; returns
-# None for "this OS won't tell us" so the gate can demand an attestation
-# instead of guessing. All subprocess probes are best-effort and never raise.
+# Air-gap gate — platform-aware. Checks are local only; unknown state fails closed.
 # --------------------------------------------------------------------------
 def _run(cmd, timeout=4.0):
-    """Best-effort subprocess probe; returns stdout text or None. Never raises."""
+    """Run a local OS inspection command; return output or None on failure."""
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            return None
         return r.stdout or ""
     except (OSError, subprocess.SubprocessError):
         return None
@@ -207,14 +209,53 @@ def default_route_exists():
         if out is None:
             return None
         return any(line.strip().startswith("0.0.0.0") for line in out.splitlines())
-    # Portable fallback: a UDP "connect" sends nothing but requires a route.
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("192.0.2.1", 80))  # TEST-NET-1 (documentation range)
-        s.close()
-        return True
-    except OSError:
-        return False
+    return None
+
+
+def active_network_interfaces():
+    """List active non-loopback links; None when the OS check is unavailable."""
+    if PLATFORM == "Linux":
+        active = []
+        try:
+            for path in glob.glob("/sys/class/net/*"):
+                name = path.rsplit("/", 1)[-1]
+                if name == "lo":
+                    continue
+                try:
+                    state = open(os.path.join(path, "operstate"), encoding="ascii").read().strip()
+                except OSError:
+                    return None
+                try:
+                    carrier = open(os.path.join(path, "carrier"), encoding="ascii").read().strip() == "1"
+                except FileNotFoundError:
+                    carrier = False
+                except OSError:
+                    return None
+                if state == "up" or carrier:
+                    active.append(name)
+            return active
+        except OSError:
+            return None
+    if PLATFORM == "Darwin":
+        names = _run(["ifconfig", "-l"])
+        if names is None:
+            return None
+        active = []
+        for name in names.split():
+            if name == "lo0":
+                continue
+            details = _run(["ifconfig", name])
+            if details is None:
+                return None
+            if "status: active" in details:
+                active.append(name)
+        return active
+    if PLATFORM == "Windows":
+        out = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                    "@(Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} "
+                    "| Select-Object -ExpandProperty Name) -join \"`n\""] , timeout=12.0)
+        return None if out is None else [line.strip() for line in out.splitlines() if line.strip()]
+    return None
 
 
 def wireless_interfaces():
@@ -265,8 +306,10 @@ def bluetooth_adapters():
     if PLATFORM == "Linux":
         try:
             return os.listdir("/sys/class/bluetooth")
-        except OSError:
+        except FileNotFoundError:
             return []
+        except OSError:
+            return None
     if PLATFORM == "Darwin":
         out = _run(["system_profiler", "SPBluetoothDataType"], timeout=10.0)
         if out is None:
@@ -284,32 +327,37 @@ def bluetooth_adapters():
 
 
 def environment_report():
-    """Returns dict of findings for the gate screen. None = OS won't say."""
+    """Return local hardware/link findings; unavailable checks fail closed."""
     wifi_present, wifi_active = wireless_interfaces()
     bt = bluetooth_adapters()
     route = default_route_exists()
     return {
-        "online": bool(route), "route": route,
+        "route": route,
+        "active_network": active_network_interfaces(),
         "wifi_present": wifi_present, "wifi_active": wifi_active,
         "bluetooth": bt,
     }
 
 
+def environment_is_safe(report):
+    """Only a complete, clean local report permits use; unknown means blocked."""
+    return (report["route"] is False and report["active_network"] == [] and
+            report["wifi_present"] == [] and report["wifi_active"] == [] and
+            report["bluetooth"] == [])
+
+
 GATE_HINT = {
-    "Linux": "This edition reads real hardware state: wireless interfaces and "
-             "Bluetooth adapters from /sys, and the kernel routing table.",
-    "Darwin": "This edition checks macOS hardware ports, interface status, and the "
-              "routing table via system tools; anything the OS won't report requires "
-              "your attestation.",
-    "Windows": "This edition checks Windows routing and wireless state via "
-               "route/netsh/PowerShell; anything the OS won't report requires your "
-               "attestation.",
-}.get(PLATFORM, "On this OS, checks are probe-based; wireless and Bluetooth state "
-                "require your attestation.")
+    "Linux": "This edition reads wireless and Bluetooth devices from /sys, active "
+             "network links, and the kernel routing table.",
+    "Darwin": "This edition checks macOS hardware ports, active interfaces, and routes. "
+              "Any detected Wi-Fi or Bluetooth hardware blocks use.",
+    "Windows": "This edition checks Windows network adapters, routes, and radio devices. "
+               "Any detected Wi-Fi or Bluetooth hardware blocks use.",
+}.get(PLATFORM, "This operating system is unsupported for enforcement; the app remains locked.")
 
 
 # --------------------------------------------------------------------------
-# Risk engine — the failure simulator (identical rules to the HTML edition)
+# Risk engine — failure simulator for the documented setup
 # --------------------------------------------------------------------------
 def analyze_plan(p):
     out = []
@@ -462,7 +510,7 @@ def recovery_routes(v):
 
 
 # --------------------------------------------------------------------------
-# Runbook & sealed-letter generation (plain text — the durable format)
+# Recovery-guide text, rendered inside the desktop app after decryption
 # --------------------------------------------------------------------------
 def build_runbook_text(p):
     L = []
@@ -614,173 +662,7 @@ def build_runbook_text(p):
     return "\n".join(L)
 
 
-def build_letter_text(p):
-    fn = ((p["meta"].get("planName") or "cold-storage-plan").lower()
-          .replace(" ", "-")) + ".csp.json"
-    fn = "".join(c if c.isalnum() or c in ".-" else "-" for c in fn)
-    L = []
-    a = L.append
-    a("=" * 72)
-    a("SEALED LETTER — TO BE OPENED ON DEATH OR INCAPACITY")
-    a("=" * 72)
-    a("")
-    a(f"To {p['people'].get('executor') or 'my executor'},")
-    a("")
-    a("If you are reading this, I am dead or incapacitated. This letter tells you")
-    a("what exists and where the instructions live. It contains no keys, no")
-    a("passwords, and no hiding places — those are separated on purpose.")
-    a("")
-    a("WHAT EXISTS")
-    a("-" * 72)
-    a("I owned bitcoin held in self-custody cold storage. The complete recovery")
-    a("plan is stored in an encrypted computer file named:")
-    a("")
-    a(f"    {fn}")
-    a("")
-    a("Copies of this file are held: with you (attached to the estate documents),")
-    a("with the trustee, and with my attorney. Any copy works — they are identical.")
-    a("")
-    a("HOW IT OPENS")
-    a("-" * 72)
-    a("The file opens with the free, offline Vault Folio tool and a passphrase.")
-    a("The passphrase is NOT in this letter. It is held as follows:")
-    a("")
-    a("    ______________________________________________________________")
-    a("")
-    if p["inheritance"].get("letterLocation"):
-        a(f"(See also: {p['inheritance']['letterLocation']})")
-        a("")
-    a("WHO HELPS")
-    a("-" * 72)
-    if p["people"].get("trustee"):
-        a(f"  Trustee: {p['people']['trustee']}")
-    if p["people"].get("helper"):
-        a(f"  Technical helper (holds no keys): {p['people']['helper']}")
-    for i, h in enumerate(p["people"].get("heirs") or []):
-        a(f"  Beneficiary {i+1}: " + " · ".join(b for b in [h.get("name"), h.get("relation")] if b))
-    a("")
-    a("THE ONE WARNING THAT MATTERS")
-    a("-" * 72)
-    a("Nobody legitimate will ever call, email, or message you about this wallet.")
-    a("No \u201csupport,\u201d no \u201cvalidation,\u201d no \u201curgent recovery.\u201d Anyone who contacts you")
-    a("about the bitcoin is a thief. Speak only to the people named above.")
-    a("")
-    a("Follow the runbook inside the file. Test with a small amount before moving")
-    a("anything real. There is no rush — the coins cannot expire.")
-    a("")
-    a("")
-    a(f"    {p['meta'].get('owner') or ''}")
-    a("")
-    a(f"    Signed: ______________________    Date: {p['meta'].get('created') or '____________'}")
-    return "\n".join(L)
-
-
-# --------------------------------------------------------------------------
-# Diagrams & the illustrated runbook — self-contained HTML with inline SVG.
-# No JavaScript, no external resources: it opens offline and prints to A4.
-# Twins drawn on tkinter Canvas give the same pictures inside the app.
-# --------------------------------------------------------------------------
-def _esc(s):
-    return html_mod.escape(str(s or ""))
-
-
-def _short(s, n=24):
-    s = str(s or "")
-    return s if len(s) <= n else s[: n - 1] + "\u2026"
-
-
-def svg_quorum_map(v, vi):
-    """Per-vault diagram: the quorum drawn as m-of-n key boxes with locations."""
-    keys = list(v.get("keys") or [])
-    n = int(v.get("n") or len(keys) or 0)
-    m = int(v.get("m") or 0)
-    if n <= 0:
-        return ""
-    while len(keys) < n:
-        keys.append({})
-    per_row = min(n, 4)
-    rows = (n + per_row - 1) // per_row
-    bw, bh, gap, mx = 158, 96, 16, 20
-    w = mx * 2 + per_row * bw + (per_row - 1) * gap
-    h = 64 + rows * (bh + gap) - gap + 8
-    S = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
-         f'viewBox="0 0 {w} {h}" font-family="Courier New, monospace" role="img">']
-    title = f"VAULT {vi + 1}" + (f" — {v.get('name')}" if v.get("name") else "")
-    S.append(f'<text x="{mx}" y="24" font-size="13" font-weight="bold" fill="#0a0a0a">'
-             f'{_esc(_short(title, 46))}</text>')
-    q = f"{m}-OF-{n} MULTISIG" if m else f"{n} KEYS"
-    S.append(f'<text x="{w - mx}" y="24" font-size="11" font-weight="bold" text-anchor="end" '
-             f'fill="#b3282d">{q}</text>')
-    if m:
-        S.append(f'<text x="{w / 2}" y="46" font-size="9" text-anchor="middle" fill="#555555">'
-                 f'ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE</text>')
-        S.append(f'<line x1="{mx}" y1="53" x2="{w - mx}" y2="53" stroke="#0a0a0a" stroke-width="1"/>')
-    for i in range(n):
-        r, c = divmod(i, per_row)
-        x = mx + c * (bw + gap)
-        y = 64 + r * (bh + gap)
-        k = keys[i]
-        documented = any(k.get(f) for f in ("label", "device", "locations"))
-        dash = "" if documented else ' stroke-dasharray="4 3"'
-        S.append(f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" fill="#ffffff" '
-                 f'stroke="#0a0a0a" stroke-width="1"{dash}/>')
-        S.append(f'<text x="{x + 10}" y="{y + 18}" font-size="9" fill="#6b6b6b">KEY {i + 1}</text>')
-        S.append(f'<text x="{x + 10}" y="{y + 37}" font-size="11" font-weight="bold" fill="#0a0a0a">'
-                 f'{_esc(_short(k.get("label") or "(undocumented)", 18))}</text>')
-        if k.get("device"):
-            S.append(f'<text x="{x + 10}" y="{y + 55}" font-size="8" fill="#333333">'
-                     f'signs with: {_esc(_short(k["device"], 18))}</text>')
-        if k.get("locations"):
-            S.append(f'<text x="{x + 10}" y="{y + 71}" font-size="8" fill="#2e6b4f">'
-                     f'backup: {_esc(_short(k["locations"], 22))}</text>')
-        if not documented:
-            S.append(f'<text x="{x + 10}" y="{y + 71}" font-size="8" fill="#b3282d">'
-                     f'document this key in the plan</text>')
-    S.append("</svg>")
-    return "".join(S)
-
-
-def svg_psbt_flow(medium):
-    """The air-gap spending ceremony as a picture, for people who have never done it."""
-    w, h, wall = 700, 226, 352
-    med = _short(medium or "QR codes / removable media, as recorded in the plan", 40)
-    S = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
-         f'viewBox="0 0 {w} {h}" font-family="Courier New, monospace" role="img">']
-    S.append('<text x="24" y="22" font-size="10" fill="#6b6b6b">ONLINE SIDE — the everyday machine</text>')
-    S.append(f'<text x="{w - 24}" y="22" font-size="10" text-anchor="end" fill="#6b6b6b">'
-             f'AIR-GAPPED SIDE — never touches a network</text>')
-    S.append(f'<line x1="{wall}" y1="12" x2="{wall}" y2="{h - 34}" stroke="#b3282d" '
-             f'stroke-width="1.5" stroke-dasharray="6 5"/>')
-    S.append(f'<text x="{wall}" y="{h - 16}" font-size="9" text-anchor="middle" fill="#b3282d">'
-             f'THE AIR GAP — only this crosses: {_esc(med)}</text>')
-
-    def box(x, y, bw, bh, title, subs):
-        S.append(f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" fill="#ffffff" '
-                 f'stroke="#0a0a0a" stroke-width="1"/>')
-        S.append(f'<text x="{x + 12}" y="{y + 24}" font-size="10" font-weight="bold" '
-                 f'fill="#0a0a0a">{title}</text>')
-        ty = y + 42
-        for line in subs:
-            S.append(f'<text x="{x + 12}" y="{ty}" font-size="8.5" fill="#333333">{line}</text>')
-            ty += 13
-
-    box(24, 44, 252, 74, "1 · WATCH-ONLY COORDINATOR",
-        ["Builds the unsigned transaction (PSBT).", "Sees balances and addresses — cannot sign."])
-    box(424, 44, 252, 74, "2 · SIGNING DEVICE",
-        ["Check address, amount, fee on ITS screen.", "If anything differs — stop. Then sign."])
-    box(24, 140, 252, 60, "4 · FINALIZE &amp; BROADCAST",
-        ["The signed PSBT returns here and is sent", "to the Bitcoin network."])
-    S.append('<line x1="276" y1="81" x2="418" y2="81" stroke="#0a0a0a" stroke-width="1.2"/>')
-    S.append('<polygon points="418,81 408,76 408,86" fill="#0a0a0a"/>')
-    S.append('<text x="347" y="72" font-size="8.5" text-anchor="middle" fill="#0a0a0a">unsigned PSBT</text>')
-    S.append('<polyline points="550,118 550,170 282,170" fill="none" stroke="#0a0a0a" stroke-width="1.2"/>')
-    S.append('<polygon points="282,170 292,165 292,175" fill="#0a0a0a"/>')
-    S.append('<text x="416" y="160" font-size="8.5" text-anchor="middle" fill="#0a0a0a">signed PSBT — 3</text>')
-    S.append('</svg>')
-    return "".join(S)
-
-
-# -- tkinter Canvas twins (same pictures, drawn inside the app) --------------
+# In-app Canvas diagrams
 def canvas_quorum(cv, v, vi):
     keys = list(v.get("keys") or [])
     n = int(v.get("n") or len(keys) or 0)
@@ -859,224 +741,6 @@ def canvas_psbt_flow(cv, medium):
 
 
 # --------------------------------------------------------------------------
-# The illustrated runbook — one self-contained HTML file for heirs.
-# --------------------------------------------------------------------------
-def build_runbook_html(p):
-    e = _esc
-    H = []
-    a = H.append
-    plan_name = p["meta"].get("planName") or "Cold Storage Plan"
-    a("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>")
-    a(f"<title>Inheritance Runbook — {e(plan_name)}</title>")
-    a("""<style>
-@page { size: A4; margin: 18mm; }
-body { background:#fafaf8; color:#0a0a0a; font-family:Georgia,'Noto Serif',serif;
-       max-width:760px; margin:0 auto; padding:32px 28px 64px; line-height:1.55; }
-h1 { font-size:26px; margin:6px 0 2px; }
-h2 { font-size:15px; letter-spacing:2px; border-top:2px solid #0a0a0a;
-     padding-top:14px; margin-top:38px; }
-h3 { font-size:14px; margin:18px 0 4px; }
-.kicker { font-family:'Courier New',monospace; font-size:10px; letter-spacing:2px; color:#6b6b6b; }
-.meta { font-family:'Courier New',monospace; font-size:11px; color:#333; }
-table { border-collapse:collapse; width:100%; margin:10px 0; font-size:13px; }
-th,td { border-top:1px solid #c9c7bf; padding:7px 9px; text-align:left; vertical-align:top; }
-th { font-family:'Courier New',monospace; font-size:10px; letter-spacing:1px; color:#555; }
-.warn { border:1.5px solid #b3282d; background:#fff; padding:14px 16px; margin:18px 0;
-        page-break-inside:avoid; }
-.warn b { color:#b3282d; }
-figure { margin:16px 0; page-break-inside:avoid; overflow-x:auto; }
-figcaption { font-family:'Courier New',monospace; font-size:9px; color:#6b6b6b;
-             margin-top:6px; letter-spacing:1px; }
-ol.steps li { margin:9px 0; }
-.vault { border:1px solid #0a0a0a; background:#fff; padding:14px 16px; margin:16px 0; }
-.routes { font-family:'Courier New',monospace; font-size:11px; }
-.routes li { margin:4px 0; }
-dl.glossary dt { font-family:'Courier New',monospace; font-size:11px; font-weight:bold; margin-top:10px; }
-dl.glossary dd { margin:2px 0 8px 0; font-size:13px; }
-footer { margin-top:44px; border-top:1px solid #c9c7bf; padding-top:10px;
-         font-family:'Courier New',monospace; font-size:9px; color:#6b6b6b; }
-@media print { body { padding:0; } }
-</style></head><body>""")
-
-    # ---- header -----------------------------------------------------------
-    a("<div class='kicker'>VAULT FOLIO · INHERITANCE RUNBOOK · THIS DOCUMENT CONTAINS NO KEYS</div>")
-    a(f"<h1>{e(plan_name)}</h1>")
-    a(f"<div class='meta'>Owner: {e(p['meta'].get('owner') or '—')} &nbsp;·&nbsp; "
-      f"Prepared: {e(p['meta'].get('created') or '—')} &nbsp;·&nbsp; "
-      f"Print this. Follow it slowly.</div>")
-
-    a("<div class='warn'><b>READ FIRST — THE WARNING THAT MATTERS.</b><br>"
-      "Nobody legitimate will ever email or call you to &ldquo;validate&rdquo; or &ldquo;recover&rdquo; "
-      "this wallet. Anyone who does is a thief. Move slowly, verify everything, and send a small "
-      "test transaction before moving any real amount. There is no rush — the coins cannot expire.</div>")
-
-    # ---- 1 people ----------------------------------------------------------
-    a("<h2>1 · WHO TO CONTACT</h2><table>")
-    a("<tr><th>ROLE</th><th>PERSON</th></tr>")
-    for label, key in [("Executor / next of kin", "executor"),
-                       ("Trustee (holds the map)", "trustee"),
-                       ("Technical helper (holds NO keys)", "helper")]:
-        if p["people"].get(key):
-            a(f"<tr><td>{e(label)}</td><td>{e(p['people'][key])}</td></tr>")
-    for i, h_ in enumerate(p["people"].get("heirs") or []):
-        bits = [h_.get("name"), h_.get("relation"), h_.get("role"), h_.get("contact")]
-        a(f"<tr><td>Heir {i + 1}</td><td>{e(' · '.join(b for b in bits if b))}</td></tr>")
-    a("</table>")
-
-    # ---- 2 vaults ----------------------------------------------------------
-    a("<h2>2 · WHAT EXISTS</h2>")
-    if not p["vaults"]:
-        a("<p>No vaults documented.</p>")
-    for vi, v in enumerate(p["vaults"]):
-        a("<div class='vault'>")
-        a(f"<h3>{e(v.get('name') or ('Vault %d' % (vi + 1)))}</h3>")
-        a("<table>")
-        if v.get("tier"):
-            a(f"<tr><th>PURPOSE</th><td>{e(v['tier'])}</td></tr>")
-        if v.get("m") and v.get("n"):
-            a(f"<tr><th>QUORUM</th><td>{v['m']}-of-{v['n']} — any {v['m']} of {v['n']} keys can spend</td></tr>")
-        if v.get("script"):
-            a(f"<tr><th>SCRIPT</th><td>{e(v['script'])}</td></tr>")
-        if v.get("coordinator"):
-            a(f"<tr><th>COORDINATOR</th><td>{e(v['coordinator'])}</td></tr>")
-        if (v.get("timelock") or {}).get("enabled"):
-            a(f"<tr><th>TIMELOCK</th><td>{e(v['timelock'].get('delay') or 'Yes — details not recorded')}</td></tr>")
-        if v.get("notes"):
-            a(f"<tr><th>NOTES</th><td>{e(v['notes'])}</td></tr>")
-        a("</table>")
-        svg = svg_quorum_map(v, vi)
-        if svg:
-            a(f"<figure>{svg}<figcaption>THE QUORUM, DRAWN — each box is one key, "
-              f"where its backup lives, and what signs with it.</figcaption></figure>")
-        keys = v.get("keys") or []
-        if keys:
-            a("<table><tr><th>KEY</th><th>SIGNER</th><th>BACKUP</th><th>WHERE</th><th>SEED-PASSPHRASE BACKUP STATUS</th></tr>")
-            for ki, k in enumerate(keys):
-                a(f"<tr><td>{ki + 1} · {e(k.get('label') or '')}</td><td>{e(k.get('device') or '')}</td>"
-                  f"<td>{e(k.get('media') or '')}</td><td>{e(k.get('locations') or '')}</td>"
-                  f"<td>{e(k.get('passphrase') or '')}</td></tr>")
-            a("</table>")
-        routes = recovery_routes(v)
-        if routes:
-            a(f"<p class='routes'><b>Recovery routes — {len(routes)} combination(s) reach the quorum:</b></p>")
-            a("<ol class='routes'>")
-            for c in routes[:10]:
-                a("<li>" + e("  +  ".join(f"{k['name']} ({k['where']})" for k in c)) + "</li>")
-            if len(routes) > 10:
-                a(f"<li>… and {len(routes) - 10} more</li>")
-            a("</ol>")
-        a("</div>")
-
-    # ---- 3 the map ----------------------------------------------------------
-    a("<h2>3 · THE MAP (WALLET DESCRIPTOR)</h2>")
-    a("<p>The descriptor reconstructs the wallet: script type, cosigner public keys, threshold, "
-      "timelocks. Seeds alone are NOT enough for a multisig. Copies live at:</p><table>")
-    dlocs = p["backups"].get("descriptorLocations") or []
-    if dlocs:
-        for d in dlocs:
-            a(f"<tr><td>&#9744;</td><td>{e(d.get('where', ''))}</td><td>{e(d.get('format') or '')}</td></tr>")
-    else:
-        a("<tr><td>&#9888;</td><td colspan='2'>Not documented — ask the trustee; check with each "
-          "key backup.</td></tr>")
-    a("</table>")
-    extra = []
-    if p["backups"].get("watchOnly"):
-        extra.append(("Watch-only wallet", p["backups"]["watchOnly"]))
-    if p["backups"].get("rescanHeight"):
-        extra.append(("Rescan from block", p["backups"]["rescanHeight"]))
-    if p["backups"].get("testedSoftware"):
-        extra.append(("Software that worked", p["backups"]["testedSoftware"]))
-    if (p["backups"].get("sampleAddresses") or "").startswith("Yes"):
-        extra.append(("Verification addresses", "Recorded with the descriptor copies — a restored "
-                                               "wallet must reproduce them."))
-    if extra:
-        a("<table>" + "".join(f"<tr><th>{e(k_)}</th><td>{e(v_)}</td></tr>" for k_, v_ in extra) + "</table>")
-
-    # ---- 4 how recovery works ----------------------------------------------
-    a("<h2>4 · HOW RECOVERY WORKS</h2>")
-    a(f"<p>{e(p['inheritance'].get('mechanism') or 'Not documented.')}</p>")
-    if p["inheritance"].get("releaseConditions"):
-        a(f"<p>{e(p['inheritance']['releaseConditions'])}</p>")
-    if p["inheritance"].get("letterLocation"):
-        a(f"<p>Sealed instructions: {e(p['inheritance']['letterLocation'])}</p>")
-    if p["inheritance"].get("legalDocs"):
-        a(f"<p>Legal documents: {e(p['inheritance']['legalDocs'])}</p>")
-
-    # ---- 5 procedure ---------------------------------------------------------
-    a("<h2>5 · RECOVERY PROCEDURE</h2>")
-    a("<p>Generic PSBT flow — adapt to the coordinator named above. The technical helper should "
-      "verify current software before starting.</p>")
-    a(f"<figure>{svg_psbt_flow(p['signing'].get('medium'))}"
-      f"<figcaption>HOW A TRANSACTION CROSSES THE AIR GAP AND BACK</figcaption></figure>")
-    steps = [
-        "Gather the required number of keys for the quorum — each from its own location, ideally "
-        "with the people named above. Never enter seeds into a website or give them to anyone who "
-        "contacts you.",
-        "Locate a descriptor copy. Import it into the named coordinator (or Bitcoin Core / Sparrow "
-        "as a fallback) to build a watch-only wallet. Rescan from the recorded height. Confirm the "
-        "balance and that a recorded receiving address belongs to the wallet.",
-        "Create a SMALL test transaction to a destination the family fully controls. Cross to the "
-        "signing device(s) by " + (p["signing"].get("medium") or "the recorded method") + ".",
-        "On each signer: verify destination, amount, and fee on the device screen. If anything "
-        "differs from what the coordinator showed — stop.",
-        "Collect the required signatures (one signer per session; never load a quorum of seeds "
-        "onto one machine), finalize, and broadcast from the online machine.",
-        "Only after the test confirms on-chain: repeat for the real amounts, preferably into a "
-        "fresh wallet the heirs control.",
-    ]
-    a("<ol class='steps'>" + "".join(f"<li>{e(s)}</li>" for s in steps) + "</ol>")
-    rit = [label for val, label in RITUAL if val in (p["signing"].get("verifyRitual") or [])]
-    if rit:
-        a("<p><b>The owner's standing verification ritual:</b></p><ul>")
-        for r in rit:
-            a(f"<li>{e(r)}</li>")
-        a("</ul>")
-
-    # ---- 6 maintenance --------------------------------------------------------
-    a("<h2>6 · MAINTENANCE (WHILE THE OWNER IS ALIVE)</h2><table>")
-    if p["inheritance"].get("heartbeat"):
-        a(f"<tr><th>TIMELOCK REFRESH</th><td>{e(p['inheritance']['heartbeat'])}</td></tr>")
-    if p["inheritance"].get("canary"):
-        a(f"<tr><th>CANARY</th><td>{e(p['inheritance']['canary'])}</td></tr>")
-    if p["rehearsal"].get("restoreDrill"):
-        a(f"<tr><th>RESTORE DRILL</th><td>{e(p['rehearsal']['restoreDrill'])}</td></tr>")
-    if p["rehearsal"].get("familyWalkthrough"):
-        a(f"<tr><th>FAMILY WALKTHROUGH</th><td>{e(p['rehearsal']['familyWalkthrough'])}</td></tr>")
-    if p["rehearsal"].get("testSpendDate"):
-        a(f"<tr><th>LAST TEST SPEND</th><td>{e(p['rehearsal']['testSpendDate'])}</td></tr>")
-    a("</table>")
-
-    if p.get("ownerNotes"):
-        a("<h2>7 · OWNER'S NOTES</h2>")
-        a(f"<p>{e(p['ownerNotes'])}</p>")
-
-    # ---- glossary -------------------------------------------------------------
-    a("<h2>GLOSSARY — WORDS THE FAMILY WILL MEET</h2><dl class='glossary'>")
-    for term, gloss in [
-        ("Quorum / m-of-n", "How many of the total keys must sign before coins can move. "
-                            "2-of-3 means any two of three."),
-        ("Descriptor", "The map of the wallet: script type, public keys, threshold, timelocks. "
-                       "Privacy-sensitive but cannot spend by itself. Without it, seeds are "
-                       "not enough for a multisig."),
-        ("PSBT", "A partially signed Bitcoin transaction — the envelope that carries an unsigned "
-                 "transaction to the signer and the signed one back."),
-        ("Air gap", "A machine that never touches any network. Transactions cross by QR code or "
-                    "removable media only."),
-        ("Watch-only wallet", "A wallet that can see balances and build transactions but holds no "
-                              "keys and cannot spend."),
-        ("Timelock", "A rule in the script that opens a recovery path only after the coins sit "
-                     "unmoved for a set time."),
-    ]:
-        a(f"<dt>{e(term)}</dt><dd>{e(gloss)}</dd>")
-    a("</dl>")
-
-    a("<footer>Generated by Vault Folio (offline). This runbook contains no keys, no seeds, no "
-      "passwords. Untested backups are stories: rehearse before it matters.</footer>")
-    a("</body></html>")
-    return "\n".join(H)
-
-
-# --------------------------------------------------------------------------
 # GUI — tkinter, no browser engine anywhere
 # --------------------------------------------------------------------------
 INK, PAPER, PAPER2, LINE, FLAG, OK = "#0a0a0a", "#fafaf8", "#f2f1ec", "#c9c7bf", "#b3282d", "#2e6b4f"
@@ -1117,7 +781,6 @@ class App(tk.Tk):
         self.configure(bg=PAPER)
         self.plan = blank_plan()
         self.dirty = False
-        self._guard_flag = {"online": False}
         self._locked = False
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
@@ -1155,26 +818,25 @@ class App(tk.Tk):
         tk.Label(box, text="This tool only works offline.", font=("Georgia", 20),
                  fg=PAPER, bg="#111111").pack(anchor="w", padx=36)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=580,
-                 text="Vault Folio handles the map to your cold storage. It must run on a machine "
-                      "with no path to any network. All checks below must pass before the app opens.").pack(
+                 text="Vault Folio handles the map to your cold storage. The app opens only when the OS reports "
+                      "no default route, no active network interface, and no Wi-Fi or Bluetooth hardware. "
+                      "An unavailable check blocks use; there is no attestation override.").pack(
             anchor="w", padx=36, pady=(10, 16))
         self.gate_list = tk.Frame(box, bg="#111111")
         self.gate_list.pack(fill="x", padx=36)
         tk.Label(box, font=("Helvetica", 9), fg="#8a8a84", bg="#111111", justify="left", wraplength=580,
-                 text="To pass: disable Wi-Fi, disable Bluetooth, unplug Ethernet — best: physically remove "
-                      "wireless cards. " + GATE_HINT).pack(anchor="w", padx=36, pady=(14, 6))
+                 text="Remove Wi-Fi and Bluetooth hardware and disconnect all network cables/adapters. "
+                      + GATE_HINT).pack(anchor="w", padx=36, pady=(14, 6))
         btns = tk.Frame(box, bg="#111111")
         btns.pack(anchor="w", padx=36, pady=(6, 30))
         tk.Button(btns, text="RE-CHECK ENVIRONMENT", font=F_MONO_B, bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2",
                   command=self.run_gate).pack(side="left")
-        self.gate_attest_var = tk.BooleanVar(value=False)
-        self.gate_attest = None
         self.run_gate()
 
     def _gate_row(self, ok, text):
         color = {True: OK, False: FLAG, None: "#8a8a84"}[ok]
-        mark = {True: "■ PASS", False: "■ FAIL", None: "□ CHECKING"}[ok]
+        mark = {True: "■ PASS", False: "■ FAIL", None: "■ BLOCKED"}[ok]
         row = tk.Frame(self.gate_list, bg="#111111")
         row.pack(fill="x", pady=2)
         tk.Label(row, text=mark, font=F_MONO, fg=color, bg="#111111").pack(side="left")
@@ -1197,61 +859,22 @@ class App(tk.Tk):
         for w in self.gate_list.winfo_children():
             w.destroy()
 
-        if rep["route"]:
-            self._gate_row(False, "A default network route exists. Disable networking and re-check.")
-        elif rep["route"] is None:
-            self._gate_row(None, "Routing table unreadable on this OS. Attestation required.")
-        else:
-            self._gate_row(True, "No default network route reported by the OS.")
+        route = rep["route"]
+        self._gate_row(route is False, "No default route." if route is False else
+                       "Default route detected or route check unavailable.")
+        active = rep["active_network"]
+        self._gate_row(active == [], "No active network interface." if active == [] else
+                       "Active network interface detected or interface check unavailable.")
+        wp = rep["wifi_present"]
+        self._gate_row(wp == [], "No Wi-Fi hardware detected." if wp == [] else
+                       "Wi-Fi hardware detected or check unavailable.")
+        bt = rep["bluetooth"]
+        self._gate_row(bt == [], "No Bluetooth hardware detected." if bt == [] else
+                       "Bluetooth hardware detected or check unavailable.")
 
-        wp, wa = rep["wifi_present"], rep["wifi_active"]
-        if wa:
-            self._gate_row(False, f"Wi-Fi interface UP: {', '.join(wa)} — take it down.")
-        elif wp:
-            self._gate_row(None, f"Wi-Fi hardware present but down ({', '.join(wp)}). Attestation required.")
-        elif wp is None:
-            self._gate_row(None, "Wireless state unreadable on this OS. Attestation required.")
-        else:
-            self._gate_row(True, "No wireless interface present.")
-
-        if rep["bluetooth"]:
-            self._gate_row(None, f"Bluetooth adapter present ({', '.join(rep['bluetooth'])}). Attestation required.")
-        elif rep["bluetooth"] is None:
-            self._gate_row(None, "Bluetooth state unreadable on this OS. Attestation required.")
-        else:
-            self._gate_row(True, "No Bluetooth adapter present.")
-
-        hard_block = rep["online"] or rep["route"] or bool(wa)
-        needs_attest = (rep["route"] is None or wp is None or (wp and not wa)
-                        or rep["bluetooth"] is None or bool(rep["bluetooth"]))
-
-        box = self.gate_list.master
-        if self.gate_attest:
-            self.gate_attest.destroy()
-            self.gate_attest = None
-        if hard_block:
-            return
-        if needs_attest:
-            self.gate_attest_var.set(False)
-            self.gate_attest = tk.Frame(box, bg="#1a1113", highlightthickness=1, highlightbackground=FLAG)
-            self.gate_attest.pack(fill="x", padx=36, pady=(14, 0))
-            tk.Checkbutton(self.gate_attest, variable=self.gate_attest_var, bg="#1a1113",
-                           activebackground="#1a1113", fg="#e8b9be", selectcolor="#1a1113",
-                           font=("Helvetica", 9), justify="left", wraplength=520, anchor="w",
-                           text="I attest that this machine has no path to any network and that any "
-                                "wireless hardware is disabled in firmware/BIOS or physically removed, "
-                                "and cannot transmit.").pack(padx=12, pady=10, anchor="w")
-            tk.Button(self.gate_attest, text="ATTEST & ENTER", font=F_MONO_B, bg=PAPER, fg=INK,
-                      relief="flat", padx=16, pady=6, cursor="hand2",
-                      command=self._attest_enter).pack(padx=12, pady=(0, 12), anchor="w")
-        else:
+        safe = environment_is_safe(rep)
+        if safe:
             self.lift_gate()
-
-    def _attest_enter(self):
-        if self.gate_attest_var.get():
-            self.lift_gate()
-        else:
-            messagebox.showwarning(APP_NAME, "Attestation required — wireless must be off.")
 
     def lift_gate(self):
         home_screen(self)
@@ -1260,21 +883,20 @@ class App(tk.Tk):
     def _guard_tick(self):
         if not self._locked:
             threading.Thread(target=self._guard_probe, daemon=True).start()
-            self.after(4000, self._maybe_lock)
         self.after(15_000, self._guard_tick)
 
     def _guard_probe(self):
         try:
-            self._guard_flag["online"] = default_route_exists()
+            rep = environment_report()
+            safe = environment_is_safe(rep)
         except Exception:
-            self._guard_flag["online"] = False
+            safe = False
+        self.after(0, lambda: self._apply_guard_result(safe))
 
-    def _maybe_lock(self):
-        if self._guard_flag["online"] and not self._locked:
+    def _apply_guard_result(self, safe):
+        if not safe and not self._locked:
             self._locked = True
             LockOverlay(self)
-        elif not self._guard_flag["online"] and self._locked:
-            self._locked = False
 
 
 class LockOverlay(tk.Toplevel):
@@ -1289,22 +911,30 @@ class LockOverlay(tk.Toplevel):
         box.place(relx=0.5, rely=0.5, anchor="center", width=560)
         tk.Label(box, text="SESSION LOCKED", font=("Courier", 9), fg="#8a8a84",
                  bg="#111111").pack(anchor="w", padx=32, pady=(24, 8))
-        tk.Label(box, text="A network appeared.", font=F_H2, fg=PAPER, bg="#111111").pack(anchor="w", padx=32)
+        tk.Label(box, text="Unsafe environment detected.", font=F_H2, fg=PAPER, bg="#111111").pack(anchor="w", padx=32)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=490,
-                 text="This tool does not run while any network path exists. Disable Wi-Fi / Bluetooth / "
-                      "Ethernet. Your work is untouched underneath — the app resumes the moment the "
-                      "machine is air-gapped again.").pack(anchor="w", padx=32, pady=(10, 14))
-        tk.Button(box, text="I AM OFFLINE AGAIN — RESUME", font=F_MONO_B, bg=PAPER, fg=INK,
+                 text="A network route, active interface, Wi-Fi or Bluetooth hardware was detected, or a check failed. Disable/remove it and re-check. Your unsaved plan remains in memory.").pack(anchor="w", padx=32, pady=(10, 14))
+        tk.Button(box, text="RE-CHECK HARDWARE AND RESUME", font=F_MONO_B, bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2", command=self.try_resume).pack(
             anchor="w", padx=32, pady=(0, 26))
 
     def try_resume(self):
-        if not default_route_exists():
-            self.app._guard_flag["online"] = False
+        threading.Thread(target=self._check_resume_environment, daemon=True).start()
+
+    def _check_resume_environment(self):
+        try:
+            rep = environment_report()
+            safe = environment_is_safe(rep)
+        except Exception:
+            safe = False
+        self.app.after(0, lambda: self._resume_result(safe))
+
+    def _resume_result(self, safe):
+        if safe:
             self.app._locked = False
             self.destroy()
         else:
-            messagebox.showwarning(APP_NAME, "Network still present.", parent=self)
+            messagebox.showwarning(APP_NAME, "A network connection, radio adapter, or unavailable hardware check still blocks use.", parent=self)
 
 
 # --------------------------------------------------------------------------
@@ -1398,7 +1028,7 @@ def open_file_flow(app):
     except Exception:
         messagebox.showerror(APP_NAME, "Not a readable JSON file.")
         return
-    if env.get("magic") == ENC_MAGIC:
+    if isinstance(env, dict) and env.get("magic") == ENC_MAGIC:
         pw = simpledialog.askstring(APP_NAME, "This plan file is sealed.\nEnter its passphrase:",
                                     show="*", parent=app)
         if pw is None:
@@ -1410,12 +1040,8 @@ def open_file_flow(app):
             return
         pw = None  # drop reference
         open_choice(app, plan)
-    elif isinstance(env.get("meta"), dict) and env["meta"].get("app") == "Vault Folio":
-        messagebox.showwarning(APP_NAME, "This file was NOT encrypted. It will be re-sealed on export — "
-                                         "the only export this tool produces is encrypted.")
-        open_choice(app, env)
     else:
-        messagebox.showerror(APP_NAME, "Unrecognized file format.")
+        messagebox.showerror(APP_NAME, "Only encrypted Vault Folio JSON plan files can be opened.")
 
 
 def open_choice(app, plan):
@@ -1465,32 +1091,13 @@ def show_heir(app, plan):
     txt.pack(fill="both", expand=True)
     row = tk.Frame(app, bg=PAPER)
     row.pack(fill="x", padx=40, pady=(0, 20))
-    tk.Button(row, text="SAVE ILLUSTRATED RUNBOOK (.HTML)", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-              padx=12, pady=8, cursor="hand2",
-              command=lambda: save_file(plan, build_runbook_html(plan), "runbook", ".html",
-                                        [("HTML document", "*.html")])).pack(side="left", padx=(0, 8))
-    tk.Button(row, text="SAVE RUNBOOK (.TXT)", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-              padx=12, pady=8, cursor="hand2",
-              command=lambda: save_file(plan, build_runbook_text(plan), "runbook", ".txt",
-                                        [("Text", "*.txt")])).pack(side="left", padx=(0, 8))
     tk.Button(row, text="CLOSE", font=F_MONO_B, bg=PAPER, fg=INK, relief="flat",
               highlightthickness=1, highlightbackground=INK, padx=12, pady=8, cursor="hand2",
               command=lambda: home_screen(app)).pack(side="left")
 
 
-def save_file(plan, text, kind, ext, filetypes):
-    base = ((plan["meta"].get("planName") or "cold-storage-plan").lower().replace(" ", "-"))
-    base = "".join(c if c.isalnum() or c in ".-" else "-" for c in base)
-    path = filedialog.asksaveasfilename(defaultextension=ext, initialfile=f"{base}.{kind}{ext}",
-                                        filetypes=filetypes)
-    if path:
-        with open(path, "w") as fh:
-            fh.write(text)
-        messagebox.showinfo(APP_NAME, f"Saved: {path}")
-
-
 # --------------------------------------------------------------------------
-# Wizard — ten folios, same content model as the HTML edition
+# Desktop questionnaire wizard
 # --------------------------------------------------------------------------
 STEP_DEFS = [
     ("start", "Read this first"),
@@ -1669,6 +1276,10 @@ class Wizard:
             tk.Label(pad, text=intro, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left",
                      wraplength=640, anchor="w").pack(anchor="w")
         tk.Frame(pad, bg=LINE, height=1).pack(fill="x", pady=14)
+        tk.Label(pad,
+                 text="STRUCTURE AND STORAGE LOCATIONS ONLY — never enter seed words, private keys, seed passphrases, xpubs, wallet descriptors, or full signing plans.",
+                 font=("Helvetica", 9, "bold"), fg=FLAG, bg=PAPER, justify="left",
+                 wraplength=640, anchor="w").pack(anchor="w", pady=(0, 10))
         return pad
 
     def note(self, parent, text, warn=False):
@@ -1686,8 +1297,8 @@ class Wizard:
     def page_start(self):
         pad = self.page("Folio · 00 · Before anything", "Ground rules")
         rules = [
-            "I will never type seed words, private keys, or full xpubs into this tool",
-            "I am working on a machine I trust, with all networking disabled or removed",
+            "I will enter structural descriptions and storage locations only — no seeds, keys, seed passphrases, xpubs, or wallet descriptors",
+            "I am using a machine with no Wi-Fi or Bluetooth hardware and no network connection",
             "I understand nothing is saved until I export the encrypted file at the end",
             "The encrypted file is a map: whoever holds it learns the STRUCTURE, but still cannot spend",
         ]
@@ -2113,25 +1724,8 @@ class Wizard:
         row.pack(anchor="w", pady=14)
         tk.Button(row, text="SAVE ENCRYPTED PLAN (.CSP.JSON)", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
                   padx=14, pady=8, cursor="hand2", command=do_export).pack(side="left", padx=(0, 8))
-        tk.Button(row, text="ILLUSTRATED RUNBOOK (.HTML)", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2", padx=10,
-                  command=lambda: save_file(self.plan, build_runbook_html(self.plan), "runbook", ".html",
-                                            [("HTML document", "*.html")])).pack(side="left")
-        row2 = tk.Frame(pad, bg=PAPER)
-        row2.pack(anchor="w", pady=(0, 6))
-        tk.Button(row2, text="RUNBOOK (.TXT)", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2", padx=10,
-                  command=lambda: save_file(self.plan, build_runbook_text(self.plan), "runbook", ".txt",
-                                            [("Text", "*.txt")])).pack(side="left", padx=(0, 8))
-        tk.Button(row2, text="SEALED LETTER (.TXT)", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2", padx=10,
-                  command=lambda: save_file(self.plan, build_letter_text(self.plan), "sealed-letter", ".txt",
-                                            [("Text", "*.txt")])).pack(side="left")
-        tk.Label(pad, text="The only plan file this tool produces is encrypted. There is no plaintext "
-                           "export — the map never exists on disk unsealed. The runbooks and the letter "
-                           "contain no keys; they are the paper trail for the family. The illustrated "
-                           "runbook is one self-contained HTML file (no scripts, no external resources) — "
-                           "it opens offline in any browser and prints to A4.",
+        tk.Label(pad, text="Only the encrypted plan is saved. The recovery guide is viewed inside this app "
+                           "after the heir opens the file with its passphrase; no plaintext guide export is created.",
                  font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER, justify="left",
                  wraplength=620).pack(anchor="w", pady=(6, 0))
 
@@ -2200,11 +1794,10 @@ def self_test():
     assert len(recovery_routes(plan["vaults"][0])) == 3  # 2-of-3 -> C(3,2)
     analyze_plan(plan)  # must not raise
     rb = build_runbook_text(plan)
-    rh = build_runbook_html(plan)
-    assert "READ FIRST" in rb and "<svg" in rh and "</html>" in rh
+    assert "READ FIRST" in rb
     print("Vault Folio self-test: OK")
     print("  crypto:  AES-256-GCM + PBKDF2-SHA-256(600k) roundtrip, wrong-key and tamper rejected")
-    print("  logic:   risk engine, recovery routes, text + illustrated runbooks")
+    print("  logic:   risk engine, recovery routes, text runbook + in-app diagrams")
 
 
 def main():

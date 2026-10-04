@@ -26,18 +26,15 @@ It creates no keys. It signs nothing. It never asks for seed words.
 no web storage, no cookies, no caches, no background persistence. The only disk
 writes are the files you explicitly choose in a Save dialog.
 
-- **Air-gap gate** — the native app checks local OS network and radio state and
-  refuses to run when a default route or active wireless interface is reported.
-  These checks cannot prove physical isolation and do not contact external
-  connectivity services. The browser fallback makes no network requests, but
-  browsers cannot verify physical isolation; use it only on a physically
-  air-gapped machine.
+- **Fail-closed air-gap gate** — refuses to open if the OS detects Wi-Fi or
+  Bluetooth hardware, an active network interface, a default route, or cannot
+  complete any environment check. It checks again during use and locks if the
+  environment becomes unsafe. It makes no network requests.
 - **Encryption-only export** — AES-256-GCM, key derived with PBKDF2-HMAC-SHA-256
   (600,000 rounds). There is no plaintext plan export.
-- **Illustrated runbook** — exports a self-contained HTML document (no scripts,
-  no external resources, prints to A4) with drawn diagrams: the quorum map for
-  each vault and the air-gap signing ceremony. Plus plain-text runbook and a
-  sealed executor letter.
+- **In-app heir guide** — decrypts the saved plan in memory and displays a
+  setup-specific recovery guide with diagrams. The guide is not written as a
+  separate plaintext file.
 - **Risk review** — a failure simulator reads what you documented and flags the
   classic ways cold-storage plans and inheritances actually die (quorum in one
   location, memory-only passphrases, no descriptor backup, untested restores,
@@ -63,31 +60,24 @@ nothing survives power-off. See [docs/OPERATIONAL-SECURITY.md](docs/OPERATIONAL-
 
 | File | Purpose |
 |---|---|
-| `*.csp.json` | The sealed plan — AES-256-GCM encrypted. Back up in 2+ places. |
-| `*.runbook.html` | Illustrated heir runbook — self-contained, prints to A4. No keys. |
-| `*.runbook.txt` | Plain-text runbook — the durable format. No keys. |
-| `*.sealed-letter.txt` | Cover letter for the sealed envelope with the trustee. |
+| `*.csp.json` | The complete questionnaire and recovery guide, sealed with AES-256-GCM. This is the durable file to back up in 2+ places. |
 
-The encrypted file is safe to store widely; the passphrase must travel by a
-different road (sealed with the trustee, split with a lawyer, memorized by two
-people). Whoever holds file + passphrase can read the plan.
+The program opens and displays the heir guide after the recipient enters the
+passphrase. It saves only the encrypted plan; it does not export plaintext
+runbooks or letters. Keep the passphrase separate from the encrypted file.
 
 ## Durability: reading the file in 20 years
 
 The encryption envelope is fully specified in
-[docs/FILE-FORMAT.md](docs/FILE-FORMAT.md) — any machine with Python +
-`cryptography` can decrypt a `.csp.json` with ~20 lines of code, no Vault Folio
-required. A format-compatible standalone HTML viewer is kept in
-`fallback-viewer/` as an emergency decryptor (browsers retain data — use it on
-an offline machine, preferably a live USB, and only if the native app is
-unavailable).
+[docs/FILE-FORMAT.md](docs/FILE-FORMAT.md) — any offline program can read the
+documented encrypted JSON envelope. There is no browser edition. A minimal
+Python decryptor is documented for future compatibility.
 
 ## Repository layout
 
 ```
-vault-folio.py            the app (Linux / macOS / Windows)
-fallback-viewer/          emergency format-compatible HTML viewer
-docs/FILE-FORMAT.md       the .csp.json envelope specification
+vault-folio.py            the offline desktop app (Linux / macOS / Windows)
+docs/FILE-FORMAT.md       the encrypted JSON envelope specification
 docs/OPERATIONAL-SECURITY.md  how and where to run this safely
 docs/research/            background research on cold-storage inheritance
 ```

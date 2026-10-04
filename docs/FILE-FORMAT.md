@@ -84,16 +84,17 @@ print(json.dumps(plan, indent=2, ensure_ascii=False))
 ## Content rules (enforced by the app's design, not by the format)
 
 The plan document describes *locations and structure*. Its `passphrase` field
-is only a categorical seed-passphrase backup status (for example, where it is
-stored); it must never contain the passphrase itself. The document must never
-contain seed words, private keys (xprv), or full xpub strings.
-The format cannot stop a user from typing secrets into a text field — the rule
-is social, printed on the first screen of the app and on every export:
+is only a categorical seed-passphrase backup status; it must never contain the
+passphrase itself. The document must not contain seed words, seed passphrases,
+private keys (xprv), full xpub strings, wallet descriptors, or complete signing
+plans. The app's questionnaire requests only structural descriptions and
+storage locations, and repeats this rule throughout the wizard. Free-text fields
+cannot detect every secret a user might type, so follow the rule carefully:
 
-> **Never type seed words, private keys, or full xpubs into this tool.**
+> **Never type seed words, seed passphrases, keys, xpubs, wallet descriptors, or full signing plans into this tool.**
 
 ## Compatibility
 
-Files written by `vault-folio.py` and by `fallback-viewer/index.html` are
-byte-compatible in both directions. The HTML viewer uses WebCrypto
-(PBKDF2-SHA-256, 600,000 iterations; AES-GCM) with the identical envelope.
+The desktop app writes this documented JSON envelope. Future offline
+applications can implement PBKDF2-HMAC-SHA-256 and AES-256-GCM to open the
+same files; the format does not depend on the Python GUI.
