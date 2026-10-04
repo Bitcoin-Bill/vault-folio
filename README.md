@@ -35,6 +35,9 @@ writes are the files you explicitly choose in a Save dialog.
 - **In-app heir guide** — decrypts the saved plan in memory and displays a
   setup-specific recovery guide with diagrams. The guide is not written as a
   separate plaintext file.
+- **Browser companion prototype** — `browser-edition/index.html` keeps a
+  side-by-side version for possible EntropyLab / Ooga Booga plugin work. It
+  cannot enforce the desktop app's hardware gate; do not enter real plan data.
 - **Risk review** — a failure simulator reads what you documented and flags the
   classic ways cold-storage plans and inheritances actually die (quorum in one
   location, memory-only passphrases, no descriptor backup, untested restores,
@@ -70,13 +73,14 @@ runbooks or letters. Keep the passphrase separate from the encrypted file.
 
 The encryption envelope is fully specified in
 [docs/FILE-FORMAT.md](docs/FILE-FORMAT.md) — any offline program can read the
-documented encrypted JSON envelope. There is no browser edition. A minimal
-Python decryptor is documented for future compatibility.
+documented encrypted JSON envelope. A minimal Python decryptor is documented
+for future compatibility.
 
 ## Repository layout
 
 ```
 vault-folio.py            the offline desktop app (Linux / macOS / Windows)
+browser-edition/           companion prototype for future plugin integration
 docs/FILE-FORMAT.md       the encrypted JSON envelope specification
 docs/OPERATIONAL-SECURITY.md  how and where to run this safely
 docs/research/            background research on cold-storage inheritance

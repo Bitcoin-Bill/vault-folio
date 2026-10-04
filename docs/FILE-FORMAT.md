@@ -95,6 +95,7 @@ cannot detect every secret a user might type, so follow the rule carefully:
 
 ## Compatibility
 
-The desktop app writes this documented JSON envelope. Future offline
-applications can implement PBKDF2-HMAC-SHA-256 and AES-256-GCM to open the
-same files; the format does not depend on the Python GUI.
+The desktop app and browser companion prototype use this documented JSON
+envelope. Future applications can implement PBKDF2-HMAC-SHA-256 and AES-256-GCM
+to open the same files; file-format compatibility does not make the browser
+prototype suitable for real plans or give it the desktop app's hardware gate.

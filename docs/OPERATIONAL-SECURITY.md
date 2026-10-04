@@ -14,6 +14,9 @@ It refuses to open if Wi-Fi or Bluetooth hardware is enumerated, a network
 route or active interface exists, or any check is unavailable. It makes no
 external connectivity probes and has no attestation override. These OS checks
 are not a proof against compromised firmware or a hostile operating system.
+The side-by-side browser companion in `browser-edition/` is only an integration
+prototype. Browser APIs cannot enforce the hardware gate; do not use it for real
+plans or sensitive details.
 
 ## Setups, worst to best
 
@@ -71,8 +74,9 @@ remove it and store it with the plan materials or wipe it.
 ## Future recovery
 
 The encrypted JSON format is documented independently of the app. A future
-offline desktop program can implement the same KDF and cipher and render the
-plan without relying on a browser or this Python program.
+offline desktop program or a future plugin can implement the same KDF and
+cipher. The browser companion exists to explore that integration, not to replace
+the desktop app for real plan creation or recovery.
 
 ## The human layer
 
