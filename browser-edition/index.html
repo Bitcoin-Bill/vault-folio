@@ -282,8 +282,8 @@ function blankPlan(){
 
 const TIERS = ['Deep vault (no timelock)','Family vault (timelocked decay allowed)','Spending / liquidity wallet','Collaborative custody slice'];
 const SCRIPTS = ['P2WSH — wsh(sortedmulti(...))','Taproot / Miniscript (Liana-style leaves)','Single-sig (small amounts only)','Not sure yet'];
-const COORDS = ['Bitcoin Core (Yeti-style)','Sparrow Wallet','Nunchuk','Liana','Casa','Unchained','Specter','Other / undecided'];
-const DEVICES = ['SeedSigner (stateless QR)','Krux (stateless QR)','Jade (stateless mode)','BitBox02-class (secure element)','Air-gapped laptop + Bitcoin Core','COLDCARD (see warning)','Trezor / other','Undecided'];
+const COORDS = ['Bitcoin Core (Yeti-style)','Sparrow Wallet','Nunchuk','Liana','Casa','Unchained','Specter','Electrum','Caravan','Other / undecided'];
+const DEVICES = ['SeedSigner (stateless QR)','Krux (stateless QR)','Jade (stateless mode)','BitBox02-class (secure element)','Air-gapped laptop + Bitcoin Core','COLDCARD (see warning)','Trezor / other','Undecided',"COLDCARD Q / Mk4","Trezor","Ledger","BitBox02","Foundation Passport","Keystone","Jade","SeedSigner","Krux","Specter DIY","TAPSIGNER","Air-gapped Bitcoin Core","Other / custom"];
 const GENMETHODS = ['Dice / coins / cards + offline calculator (EntropyLab)','Device RNG (device-generated)','Bitcoin Core wallet generation','Imported existing seed','Undecided'];
 const MEDIA = ['Steel / metal plate','Paper (NATO-phonetic, checksum)','Archival optical disc + printed paper','Encrypted digital file','Hardware device only (no separate backup)'];
 const PASSPHRASE = ['None — explicit record of that','Stored at a separate site','Sealed copy held by trustee','Memory only (dangerous)','Undecided'];
@@ -512,6 +512,7 @@ function renderRepeater(r, host){
 
 /* ---------- vaults custom step ---------- */
 function renderVaults(host){
+  renderPresetPicker(host);
   const draw=()=>{
     host.innerHTML='';
     const st=STEPS.find(s=>s.id==='vaults');
@@ -698,6 +699,10 @@ function analyzePlan(p){
   if(p.signing.medium==='USB stick (last resort)')
     add('info','USB crosses the air gap','USB is a tunnel: it carries arbitrary data both ways. Prefer QR (UR/animated) or SD where the signer supports it.','If USB is unavoidable, dedicate the stick, and decode the PSBT independently on both sides.');
 
+  for(const row of (p.accessRecords||[])){
+    if(row.mode==='Direct access details inside encrypted guide'&&row.directAccess)
+      add('warning','Guide contains direct access credentials','Anyone opening the guide can read these details.','Keep a separate recovery route outside the guide.');
+  }
   if(out.length===0)
     add('info','No structural weaknesses detected','Based on what is documented. This review checks structure, not execution — physical security and discipline remain yours.','Keep the rehearsal log current.');
   const order={critical:0,warning:1,info:2};
@@ -794,6 +799,7 @@ function readFile(file){ return new Promise((res,rej)=>{ if(file.size>10*1024*10
 function renderExport(host){
   host.append(el('div',{class:'folio'},'Folio · 09 · Sealing the file'));
   host.append(el('h2',{},'Encrypt & export the inheritance file'));
+  host.append(el('div',{class:'note warn'},'YubiKey unlock is desktop-only. This prototype can only open and save passphrase-only VAULTFOLIO/1 files.'));
   host.append(el('p',{class:'step-intro'},'The plan is sealed with a passphrase using AES-256-GCM (key derived with PBKDF2-SHA-256, 600,000 rounds). The encrypted file is safe to back up in many places. The passphrase must travel by a different road — sealed with the trustee, split with a lawyer, memorized by two people. Whoever holds file + passphrase can read the plan.'));
 
   host.append(el('div',{class:'note warn'},el('strong',{},'The passphrase problem is yours to solve deliberately. '),'If the passphrase dies with you, this file is a brick. Recommended: sealed copy with the trustee, plus instructions in the sealed letter on who holds it.'));
@@ -842,6 +848,22 @@ function renderExport(host){
   host.append(el('p',{class:'small muted',style:'margin-top:16px'},'To update the plan later: reopen this page, open your encrypted file, edit, and export a fresh sealed copy. Nothing is stored in the browser.'));
 }
 
+function recoveryRoutes(v){
+  const keys=(v.keys||[]).map((k,i)=>({name:k.label||('Key '+(i+1)),where:k.locations||'location not documented'}));
+  const m=Number(v.m),n=keys.length;
+  if(!Number.isInteger(m)||m<1||m>n)return [];
+  const indices=Array.from({length:m},(_,i)=>i),out=[];
+  while(out.length<10){
+    out.push(indices.map(i=>keys[i]));
+    let i=m-1;
+    while(i>=0&&indices[i]===n-m+i)i--;
+    if(i<0)break;
+    indices[i]++;
+    for(let j=i+1;j<m;j++)indices[j]=indices[j-1]+1;
+  }
+  return out;
+}
+
 /* ---------- in-app heir runbook renderer ---------- */
 function buildRunbook(p){
   const frag=el('div',{class:'runbook'});
@@ -853,6 +875,8 @@ function buildRunbook(p){
     el('strong',{},'Read first. '),
     'Nobody legitimate will ever email or call you to “validate” or “recover” this wallet. Anyone who does is a thief. Move slowly, verify everything, and send a small test transaction before moving any real amount.'));
 
+  if(p.meta.jurisdiction) frag.append(el('p',{},el('strong',{},'Jurisdiction: '),p.meta.jurisdiction));
+  if(p.meta.legalNotes) frag.append(el('p',{},el('strong',{},'Legal notes: '),p.meta.legalNotes));
   frag.append(el('h3',{},'1 · Who to contact'));
   const kv=el('div',{class:'kv'});
   const kvr=(k,v)=>{if(v)kv.append(el('div',{},k),el('div',{},v));};
@@ -869,7 +893,7 @@ function buildRunbook(p){
     const r=(k,val)=>{if(val)box.append(el('div',{},k),el('div',{},val));};
     r('Vault',v.name||('Vault '+(i+1)));
     r('Purpose',v.tier);
-    r('Quorum',(v.m&&v.n)?`${v.m}-of-${v.n} — any ${v.m} of ${v.n} keys can spend`:null);
+    r('Quorum',(v.m&&v.n)?`${v.m}-of-${v.n} primary rule — verify the actual wallet policy and any delayed path requirements before spending`:null);
     r('Script',v.script);
     r('Coordinator',v.coordinator);
     if(v.timelock?.enabled) r('Timelock',v.timelock.delay||'Yes — details not recorded');
@@ -884,8 +908,8 @@ function buildRunbook(p){
     if(routes.length){
       const shown=routes.slice(0,10);
       frag.append(el('p',{class:'small',style:'margin-top:6px'},
-        el('strong',{},`Recovery routes for ${v.name||'this vault'} — any ${v.m} of ${routes[0] ? (v.keys||[]).length : v.n} keys spend. `),
-        `${routes.length} combination${routes.length>1?'s':''} exist${routes.length>10?'; first 10 shown':''}:`));
+        el('strong',{},`Primary-key combinations for ${v.name||'this vault'} — actual policy and eligibility must be verified. `),
+        'Up to 10 combinations shown:'));
       const rl=el('ul',{class:'checklist'});
       shown.forEach(c=>rl.append(el('li',{},c.map(k=>`${k.name} (${k.where})`).join('  +  '))));
       frag.append(rl);
@@ -912,7 +936,7 @@ function buildRunbook(p){
   if(p.inheritance.legalDocs) frag.append(el('p',{},el('strong',{},'Legal documents: '),p.inheritance.legalDocs));
 
   frag.append(el('h3',{},'5 · Recovery procedure'));
-  frag.append(el('p',{class:'muted'},'Generic PSBT flow — adapt to the coordinator named above. The technical helper should verify current software before starting.'));
+  frag.append(el('p',{class:'muted'},'Generic PSBT flow — adapt to the coordinator named above. The technical helper must verify the actual spending path, timing requirements, and software compatibility before starting.'));
   frag.append(el('ol',{class:'rec'},
     el('li',{},'Gather the required number of keys for the quorum — each from its own location, ideally with the people named above. Never enter seeds into a website or give them to anyone who contacts you.'),
     el('li',{},'Locate a descriptor copy. Import it into the named coordinator (or Bitcoin Core / Sparrow as a fallback) to build a watch-only wallet. Rescan from the recorded height. Confirm the balance and that a recorded receiving address belongs to the wallet.'),
@@ -931,13 +955,16 @@ function buildRunbook(p){
   if(p.rehearsal.familyWalkthrough) reh.push('Family walkthrough: '+p.rehearsal.familyWalkthrough);
   if(p.rehearsal.testSpendDate) reh.push('Last test spend: '+p.rehearsal.testSpendDate);
   if(reh.length) frag.append(el('p',{},el('strong',{},'Rehearsal status: '),reh.join(' · ')));
+  if(p.rehearsal.notes) frag.append(el('p',{},el('strong',{},'Rehearsal notes: '),p.rehearsal.notes));
   if(p.ownerNotes) { frag.append(el('h3',{},'7 · Owner’s notes')); frag.append(el('p',{},p.ownerNotes)); }
   frag.append(el('p',{class:'small muted',style:'margin-top:40px'},'Generated by Vault Folio — an offline, single-file planning tool. This runbook contains no keys. Untested backups are stories: rehearse before it matters.'));
+  appendRecoveryRecords(frag,p);
   return frag;
 }
 
 /* ---------- home (post-gate): file-first ---------- */
 function renderHome(){
+  S.plan=blankPlan();S.dirty=false; // Drop app references; not a secure RAM wipe.
   const m=document.getElementById('app'); m.innerHTML='';
   m.append(el('div',{class:'folio'},'Browser companion · plugin integration prototype'));
   m.append(el('h1',{},'The plan is the part that has to survive you.'));
@@ -981,7 +1008,8 @@ function openFileFlow(){
     let env; try{ env=JSON.parse(await readFile(f)); }catch(e){ toast('Not a readable JSON file'); return; }
     if(env && typeof env==='object' && !Array.isArray(env) && env.magic===ENC_MAGIC){
       showDecrypt(env);
-    } else toast('Only encrypted Vault Folio JSON plans are supported');
+    } else if(env?.magic==='VAULTFOLIO/2') toast('YubiKey packages require the desktop app. This browser prototype cannot unlock them.');
+    else toast('Only encrypted Vault Folio JSON plans are supported');
   });
   inp.click();
 }
@@ -1010,26 +1038,62 @@ function showOpenChoice(plan){
   const m=document.getElementById('app'); m.innerHTML='';
   m.append(el('div',{class:'folio'},'File · Opened'));
   m.append(el('h2',{},'Plan opened: '+(plan.meta.planName||'untitled')));
-  m.append(el('p',{class:'step-intro'},'Who is opening this file?'));
+  m.append(el('p',{class:'step-intro'},'Choose a read-only beneficiary guide or the editor. Editing saves a new encrypted copy.'));
   m.append(el('div',{class:'btn-row'},
-    el('button',{class:'btn',onclick:()=>{S.plan=plan;S.mode='wizard';S.step=0;S.dirty=false;renderWizard();}},'I am the owner — edit the plan'),
-    el('button',{class:'btn ghost',onclick:()=>showHeir(plan)},'I am family / executor / counsel — show me the recovery runbook')));
+    el('button',{class:'btn',onclick:()=>{S.plan=plan;S.mode='wizard';S.step=0;S.dirty=false;renderWizard();}},'Plan Editor — update and re-encrypt'),
+    el('button',{class:'btn ghost',onclick:()=>showHeir(plan)},'Beneficiary View — step-by-step guide')));
   window.scrollTo(0,0);
+}
+function safeGuidePlan(plan,reveal){
+  const p=JSON.parse(JSON.stringify(plan));
+  if(!reveal)for(const row of (p.accessRecords||[]))if(row.directAccess)row.directAccess='[Hidden: choose Show direct access details to reveal]';
+  return p;
+}
+function recordText(p,section){
+  return (p[section]||[]).map((row,i)=>'Record '+(i+1)+'\n'+recordFields(section,row).filter(([key])=>row[key]).map(([key,label])=>label+': '+row[key]).join('\n')).join('\n\n')||'Not recorded. Ask the executor or named helper.';
+}
+function beneficiarySteps(plan,reveal=false){
+  const p=safeGuidePlan(plan,reveal);
+  const steps=[
+    ['Start here',`Plan: ${p.meta.planName||'Untitled'}\nOwner: ${p.meta.owner||'Not recorded'}\nPrepared: ${p.meta.created||'Not recorded'}\nJurisdiction: ${p.meta.jurisdiction||'Not recorded'}\nLegal notes: ${p.meta.legalNotes||'Not recorded'}\n\nTake this one step at a time. This guide explains the owner’s plan; it cannot sign or send bitcoin or verify legal authority. Never enter Bitcoin seeds or private keys here. Contact known people through independently verified channels.`],
+    ['Contact the right people',`Executor: ${p.people.executor||'Not recorded'}\nTrustee: ${p.people.trustee||'Not recorded'}\nTechnical helper: ${p.people.helper||'Not recorded'}\n\n`+recordText(p,'lawyers')],
+    ['Understand what exists',(p.vaults||[]).map(v=>`${v.name||'Unnamed arrangement'}\nPrimary signing rule: ${v.m||'?'} of ${v.n||'?'} independent keys. Copies of one key still count as one.\nSoftware: ${v.coordinator||'Not recorded'}\n${v.timelock?.enabled?'A delayed path is recorded: check its exact policy separately. This app does not check chain eligibility.':''}\n${v.notes||''}`).join('\n\n')||'No arrangement documented. Ask the executor.'],
+    ['Find the backups',recordText(p,'backupRecords')+'\n\n'+(p.vaults||[]).flatMap(v=>(v.keys||[]).map(k=>`${v.name||'Vault'} / ${k.label||'Key'}: ${k.locations||'No hint recorded'}`)).join('\n')],
+    ['Find the wallet map and journal','A watch-only wallet can view transactions but cannot sign. The configuration is the wallet map. Keep Bitcoin signing secrets out of this app.\n\n'+(p.backups.descriptorLocations||[]).map(d=>'Configuration copy: '+(d.where||'Location missing')+' / '+(d.format||'')).join('\n')+'\nWatch-only: '+(p.backups.watchOnly||'Not recorded')+'\nRescan: '+(p.backups.rescanHeight||'Not recorded')+'\n\n'+recordText(p,'accessRecords')],
+    ['Check the recovery route','Legal release and Bitcoin spending conditions are different. Timelocks do not detect death or automatically send funds. Relative delays apply to individual outputs; logging in does not reset them. Ask the helper to verify eligibility.\n\n'+recordText(p,'recoveryPaths')+'\n\nOwner mechanism: '+(p.inheritance.mechanism||'Not recorded')+'\nRelease conditions: '+(p.inheritance.releaseConditions||'Not recorded')],
+    ['Rehearse before moving funds','Follow the owner’s tested procedure with authorized people and a trusted helper. Use the actual wallet/signing tools, not this guide. Check configuration and known-address records. Verify destination, amount, fee and change; test with a small amount first.\n\nOwner procedure: '+(p.signing.coordinatorNotes||'Not recorded')+'\nTransfer medium: '+(p.signing.medium||'Not recorded')+'\nTested software: '+(p.backups.testedSoftware||'Not recorded')+'\nLast test: '+(p.rehearsal.testSpendDate||'Not recorded')+'\nRehearsal notes: '+(p.rehearsal.notes||'Not recorded')]
+  ];
+  for(const [i,row] of (p.instructions||[]).entries())steps.push([row.title||'Owner instruction '+(i+1),recordFields('instructions',row).filter(([k])=>k!=='title'&&row[k]).map(([k,label])=>label+': '+row[k]).join('\n\n')||'No action recorded. Ask the executor.']);
+  steps.push(['If something is missing','Stop instead of guessing. Use recorded alternate contacts and routes. Opening this guide does not prove the bitcoin is recoverable.\n\nOwner’s notes: '+(p.ownerNotes||'Not recorded')+'\n\nClose the guide and fully shut down the live session when finished. This browser prototype cannot enforce RAM-only operation or guarantee memory erasure.']);
+  return steps;
 }
 function showHeir(plan){
-  const m=document.getElementById('app'); m.innerHTML='';
-  m.append(el('div',{class:'heir-banner'},
-    el('div',{class:'folio'},'Recovery mode · read-only'),
-    el('h2',{},'Heir & executor runbook'),
-    el('p',{class:'muted small'},'This view turns the sealed plan into a step-by-step recovery guide. Follow it slowly and test with a small amount first.')));
-  m.append(buildRunbook(plan));
-  m.append(el('div',{class:'btn-row'},el('button',{class:'btn ghost',onclick:renderHome},'Close')));
-  window.scrollTo(0,0);
+  let current=0,reveal=false;
+  function paint(){
+    const m=document.getElementById('app');m.innerHTML='';
+    m.append(el('div',{class:'heir-banner'},el('div',{class:'folio'},'Beneficiary view · read only'),el('h2',{},'Your family’s recovery guide'),el('p',{},'One step at a time. This view does not change your saved plan.')));
+    const steps=beneficiarySteps(plan,reveal),nav=el('div',{class:'btn-row'});
+    const picker=el('select',{'aria-label':'Recovery step'});
+    [...steps,['Full reference (advanced)']].forEach(([title],i)=>picker.append(el('option',{value:i},(i+1)+'. '+title)));
+    picker.value=String(current);picker.addEventListener('change',()=>{current=Number(picker.value);paint();});
+    m.append(picker);
+    if(current===steps.length)m.append(buildRunbook(safeGuidePlan(plan,reveal)));
+    else{m.append(el('h3',{},steps[current][0]),el('div',{class:'note',style:'white-space:pre-wrap;line-height:1.8'},steps[current][1]));}
+    const toggle=el('input',{type:'checkbox'});toggle.checked=reveal;toggle.addEventListener('change',()=>{reveal=toggle.checked;paint();});
+    m.append(el('label',{},toggle,' Show direct journal / watch-only access details on screen'));
+    if(current>0)nav.append(el('button',{class:'btn ghost',onclick:()=>{current--;paint();}},'← Previous'));
+    if(current<steps.length)nav.append(el('button',{class:'btn',onclick:()=>{current++;paint();}},'Next step →'));
+    nav.append(el('button',{class:'btn ghost',onclick:()=>{S.plan=blankPlan();S.dirty=false;renderHome();}},'Close guide & clear session'));
+    m.append(nav);window.scrollTo(0,0);
+  }
+  paint();
 }
+
 
 /* ---------- wizard shell ---------- */
 function renderWizard(){
   const m=document.getElementById('app'); m.innerHTML='';
+  m.append(el('div',{class:'folio'},'Plan Editor · changes are kept only after encrypted export'));
   const bar=el('div',{class:'steps-bar'});
   STEPS.forEach((s,i)=>{
     const tab=el('div',{class:'step-tab'+(i===S.step?' active':(i<S.step?' done':'')),onclick:()=>{S.step=i;renderWizard();}},String(i).padStart(2,'0')+' '+s.title);
@@ -1049,6 +1113,8 @@ function renderWizard(){
       el('li',{},'I understand nothing is saved until I export the file at the end'),
       el('li',{},'The encrypted file is a map: whoever holds it learns the STRUCTURE, but still cannot spend without the physical keys')));
     body.append(el('div',{class:'note'},'Estimated time: 30–60 minutes if your setup exists; longer if this questionnaire reveals it is still a story. That is the point of the exercise.'));
+  } else if(st.custom==='records'){
+    renderRecords(body,st);
   } else if(st.custom==='vaults'){
     renderVaults(body);
   } else if(st.custom==='review'){
@@ -1063,7 +1129,7 @@ function renderWizard(){
     if(st.repeater) renderRepeater(st.repeater,body);
   }
   body.append(el('div',{class:'note warn'},el('strong',{},'Browser prototype only: '),
-    'do not enter real plan details. Browser APIs cannot enforce the desktop app’s hardware gate.'));
+    'do not enter real plan details. Browser APIs cannot enforce the desktop app’s hardware or RAM-session gates.'));
 
   const nav=el('div',{class:'wiz-nav'});
   const prev=el('button',{class:'btn ghost',onclick:()=>{ if(S.step===0){ if(confirm('Leave the wizard? Unexported work will be lost.')) renderHome(); } else {S.step--;renderWizard();} }},S.step===0?'← Exit':'← Back');
@@ -1194,8 +1260,76 @@ window.addEventListener('online',()=>{ guardLoop(); });
 window.addEventListener('offline',()=>{ /* do not auto-resume; user confirms via overlay */ });
 setInterval(()=>{ if(GATE.passed) guardLoop(); }, 15000);
 
+
+/* Offline catalog: generated from folio_catalog.py; reviewed 2026-10-04.
+   Presets describe arrangements, not endorsements or compatibility guarantees. */
+const PROFILES = [{"name": "Custom / existing arrangement", "m": 2, "n": 3, "coordinator": "Other / undecided", "note": "Document the arrangement you actually tested; edit every suggested value.", "source": ""}, {"name": "Single signature + separate physical backups", "m": 1, "n": 1, "coordinator": "Other / undecided", "note": "Multiple copies of one seed do not make multisig. Record seed format and separate passphrase custody.", "source": "https://trezor.io/guides/backups-recovery/general-standards/how-to-use-a-wallet-backup"}, {"name": "DIY 2-of-3 multisig (Sparrow)", "m": 2, "n": 3, "coordinator": "Sparrow Wallet", "note": "Three independent signing keys. Preserve wallet configuration / descriptor copies and test recovery.", "source": "https://sparrowwallet.com/features/"}, {"name": "DIY 3-of-5 multisig (Sparrow)", "m": 3, "n": 5, "coordinator": "Sparrow Wallet", "note": "Five independent keys; three authorize spending. Document who can reach each key, including backups.", "source": "https://sparrowwallet.com/features/"}, {"name": "Bitcoin Core / Yeti 2.0 style", "m": 3, "n": 7, "coordinator": "Bitcoin Core (Yeti-style)", "note": "Starting values only: confirm the exact guide revision and your actual quorum. Record offline machines, descriptor copies, archival media and rehearsal dates.", "source": "https://github.com/bowlarbear/yeti-2.0"}, {"name": "Specter Desktop multisig", "m": 2, "n": 3, "coordinator": "Specter", "note": "Editable example quorum. Record node, signer interoperability and exported wallet configuration.", "source": "https://docs.specter.solutions/desktop/multisig-guide/"}, {"name": "Electrum multisig", "m": 2, "n": 3, "coordinator": "Electrum", "note": "Editable example quorum. Record exact seed format; an Electrum seed is not automatically BIP39.", "source": "https://electrum.org/"}, {"name": "Nunchuk self-managed multisig", "m": 2, "n": 3, "coordinator": "Nunchuk", "note": "Editable example quorum. Preserve BSMS / wallet configuration and independent recovery instructions.", "source": "https://resources.nunchuk.io/getting-started/multidevicemultisig/"}, {"name": "Liana / Miniscript timed recovery", "m": 1, "n": 1, "coordinator": "Liana", "timelock": true, "note": "M/N describes the primary path ONLY. Separately record each delayed recovery path, key labels, threshold, relative delay and refresh procedure. A timer is not proof of death.", "source": "https://wizardsardine.com/blog/what-is-liana/"}, {"name": "Unchained collaborative custody", "m": 2, "n": 3, "coordinator": "Unchained", "note": "Common example; verify your contracted quorum. Record provider-held keys, legal contact and recovery without the provider.", "source": "https://help.unchained.com/what-multisig-quorum-should-i-choose"}, {"name": "Casa collaborative custody", "m": 2, "n": 3, "coordinator": "Casa", "note": "Editable example, not a claim about your subscription. Confirm key count, recovery and inheritance process in your current contract.", "source": "https://casa.io/inheritance"}, {"name": "Nunchuk assisted / autonomous inheritance", "m": 2, "n": 4, "coordinator": "Nunchuk", "note": "Example only; choose your actual plan. Distinguish provider-enforced off-chain release from on-chain Miniscript recovery. Record beneficiary requirements without secrets.", "source": "https://nunchuk.io/inheritance"}];
+const RECORD_FIELDS = {"lawyers": [["name", "Lawyer / firm / trusted contact", null], ["role", "Role", ["Lawyer", "Executor", "Trustee", "Notary", "Technical helper", "Backup custodian", "Other / custom"]], ["contact", "Known contact method / independently verified channel", null], ["jurisdiction", "Jurisdiction / engagement reference (optional)", null], ["access", "What access do they have?", ["No access; advice only", "Location hints only", "Encrypted package only", "Package unlock credential only", "Package AND unlock credential", "One Bitcoin key backup", "Several Bitcoin key backups", "Descriptor / configuration only", "Other / custom"]], ["items", "Vault / key / backup labels they can access (no secrets)", null], ["release", "Release conditions", ["Owner request", "Death documentation + executor authority", "Incapacity documentation", "Trust instructions", "Joint written approval", "Other / custom", "Not yet agreed"]], ["proof", "Required documents and where instructions are held (hints)", null], ["alternate", "Successor if firm closes / contact unavailable", null], ["reviewed", "Last verified date / acknowledgment", null], ["notes", "Custom conditions or limits (no secret values)", null], ["guideFile", "Encrypted guide copy / safety deposit box hint", null], ["appCopy", "Offline program, dependencies and instructions location / hint", null], ["unlockLabel", "Which guide unlock method label does this custodian hold? (no secret)", null], ["releaseDate", "Requested release date / event (advisory; not cryptographically enforced)", null], ["discovery", "Where is the non-secret discovery note for family?", null]], "backupRecords": [["label", "Backup label", null], ["vault", "Related vault / key label", null], ["scheme", "Backup / access method", ["BIP39 seed backup", "BIP39 + separately held passphrase", "SLIP39 single share", "SLIP39 threshold shares (one signing key)", "Seed XOR (all parts required; one signing key)", "Encrypted device backup", "Electrum seed format", "Bitcoin Core wallet backup", "Descriptor / BSMS / wallet configuration", "Package YubiKey", "Other / custom"]], ["medium", "Physical medium", ["Steel / metal", "Paper", "MicroSD", "USB drive", "Archival optical disc", "Hardware device", "Sealed legal packet", "Other / custom"]], ["custodian", "Who holds it / can retrieve it?", null], ["site", "Site alias (e.g. Site A; same alias = same failure location)", null], ["hint", "Family location hint (no exact address required)", null], ["locator", "Who knows the full location / next clue?", null], ["conditions", "Access prerequisites / release conditions (no codes)", null], ["fallback", "Alternate contact / backup route if inaccessible", null], ["tested", "Last restore or access rehearsal date", null], ["notes", "Custom details / compatible restore tool version", null]], "recoveryPaths": [["label", "Recovery path name / related vault", null], ["mechanism", "Release mechanism", ["Human / legal release", "Provider-enforced off-chain delay", "Bitcoin on-chain relative timelock", "Bitcoin on-chain absolute timelock", "Threshold seed-share reconstruction", "Other / custom"]], ["keys", "Required key or share labels (never secret values)", null], ["threshold", "Required count / total count for THIS path", null], ["delay", "Delay / units / starting event (if any)", null], ["refresh", "How and when to refresh / responsible person", null], ["dependencies", "Provider, software and configuration-copy dependencies", null], ["fallback", "Recovery if provider / lawyer / owner is unavailable", null], ["tested", "Last test date and result", null], ["scenario", "When is this route needed?", ["Owner death", "Owner incapacity", "Both primary contacts unavailable", "One key or site lost", "Provider unavailable", "Lost guide unlock key", "Other / custom"]], ["stop", "Stop conditions / who resolves disagreement", null]], "accessRecords": [["label", "Access item / recognizable name", null], ["kind", "What does this help heirs access?", ["EntropyLab journal", "Watch-only wallet", "Wallet coordinator / configuration backup", "Bitcoin node / watch-only server", "Encrypted guide copy", "Legal documents / will / trust", "Backup inventory / location map", "Encrypted document archive", "Provider account / support route", "Offline computer / live USB instructions", "Other / custom"]], ["exists", "Status", ["Available and tested", "Available; not tested", "Planned", "Not applicable", "Unknown"]], ["where", "Where to find it (path / device alias / location hint)", null], ["custodian", "Who can help / who controls access?", null], ["mode", "How should access instructions be recorded?", ["Hint only", "Direct access details inside encrypted guide"]], ["hint", "Password / access hint or separate custodian (not a wallet seed)", null], ["requirements", "Required device, software/version, account or second factor (hints allowed)", null], ["fallback", "If unavailable: alternate copy, contact or access route", null], ["tested", "Last successful access test / person who tested it", null], ["offlineCopy", "Offline copy of required software / manuals / verification instructions", null], ["renewal", "Renewal, maintenance or account-continuity responsibility", null], ["notes", "Additional instructions / custom questions", null]], "instructions": [["title", "Step title (records are followed in the order added)", null], ["audience", "Who should do this?", ["Beneficiary", "Executor", "Trustee", "Technical helper", "Joint action", "Other / custom"]], ["appliesTo", "Related vault / backup / access-item labels", null], ["before", "Before starting: prerequisites / approvals / people needed", null], ["action", "What to do, in plain language (instructions, not Bitcoin secrets)", null], ["success", "How to know this step worked", null], ["stop", "When to stop and ask for help", null], ["fallback", "If this fails: alternate contact / route", null], ["reference", "Offline manual / file / tested procedure location or hint", null]]};
+const EXTRA_BACKUP_FIELDS = {"SLIP39 threshold shares (one signing key)": [["threshold", "Shares required / total; group thresholds if used", null], ["groups", "Share labels and group/site aliases (no share words)", null]], "Seed XOR (all parts required; one signing key)": [["threshold", "Number of parts required (all parts)", null], ["groups", "Part labels / independent site aliases", null]], "Package YubiKey": [["device", "Key label / model / configured OTP slot (no secret)", null], ["lossPlan", "If this guide key is lost: separately protected guide-copy location hint", null]], "BIP39 + separately held passphrase": [["separate", "Passphrase custodian / location hint (never the passphrase)", null]], "Encrypted device backup": [["separate", "Backup-password custodian / hint (never the password)", null]]};
+const ACCESS_EXTRA = {"EntropyLab journal": [["journalFormat", "Journal format / application version / compatible reader", null], ["journalCopy", "Independent journal backup or export location / hint", null], ["journalPurpose", "What the journal documents (description only; no Bitcoin secret material)", null]], "Watch-only wallet": [["walletSoftware", "Watch-only app / version / device alias", null], ["walletNetwork", "Bitcoin network", ["Mainnet", "Testnet", "Signet", "Regtest", "Unknown"]], ["walletConfig", "Descriptor / wallet-configuration copy location or hint", null], ["walletRescan", "Birth height/date or rescan instructions", null], ["walletNode", "Node/server connection instructions or separate hint", null], ["walletCheck", "Where a known address-verification record is kept", null]]};
+const ACCESS_DIRECT = [["directAccess", "Optional guide/journal/watch-only access details (encrypted; NOT Bitcoin seeds or private keys)", null]];
+const RECORD_TITLES = {lawyers:'Lawyers & backup custodians',backupRecords:'Backup inventory & family hints',recoveryPaths:'Alternate recovery paths',accessRecords:'Journal & watch-only access',instructions:'Family recovery steps'};
+for(const section of Object.keys(RECORD_FIELDS)){
+  STEPS.splice(STEPS.length-2,0,{id:section,title:RECORD_TITLES[section],custom:'records',section});
+}
+let recordFieldId=0;
+function recordFields(section,row){
+  return [...RECORD_FIELDS[section],...(section==='backupRecords'?(EXTRA_BACKUP_FIELDS[row.scheme]||[]):[]),
+    ...(section==='accessRecords'?(ACCESS_EXTRA[row.kind]||[]):[]),
+    ...(section==='accessRecords'&&row.mode==='Direct access details inside encrypted guide'?ACCESS_DIRECT:[])];
+}
+function renderRecords(host,step){
+  host.append(el('h2',{},step.title),el('p',{class:'step-intro'},'Use aliases and family clues; exact locations are optional. Never enter Bitcoin seeds or private keys. Use hints by default; optional direct access details belong only in the access section. Keep the clues needed to find and open this package outside it too.'));
+  const rows=S.plan[step.section]??(S.plan[step.section]=[]);
+  if(step.section==='accessRecords')host.append(el('div',{class:'note warn'},'Direct access details appear in the decrypted heir guide. Hints are the default. Switching to hint-only deletes the direct credential from the current plan. Never enter Bitcoin seeds, private keys or wallet seed passphrases.'));
+  if(step.section==='backupRecords') host.append(el('div',{class:'note'},'SLIP39 shares and Seed XOR parts reconstruct one signing key. They are not independent multisig signers.'));
+  rows.forEach((row,i)=>{
+    const box=el('div',{class:'note'});box.append(el('h3',{},'Record '+(i+1)));
+    const fields=recordFields(step.section,row);
+    fields.forEach(([key,label,options])=>{
+      const wrap=el('div',{class:'field'}), id='record-'+(++recordFieldId);
+      const input=el('input',{type:key==='directAccess'?'password':'text',id}); input.value=row[key]||'';
+      wrap.append(el('label',{for:id},label),input);
+      if(options){
+        const list=el('datalist',{id:id+'-options'});options.forEach(x=>list.append(el('option',{value:x})));
+        input.setAttribute('list',id+'-options');wrap.append(list);
+      }
+      input.addEventListener('input',()=>{row[key]=input.value;if(key==='mode'&&input.value!=='Direct access details inside encrypted guide')delete row.directAccess;markDirty();});
+      if(['scheme','kind','mode'].includes(key)) input.addEventListener('change',()=>renderWizard());
+      box.append(wrap);
+    });
+    box.append(el('button',{class:'btn ghost',onclick:()=>{if(confirm('Remove this record?')){rows.splice(i,1);markDirty();renderWizard();}}},'Remove record'));
+    host.append(box);
+  });
+  host.append(el('button',{class:'btn',onclick:()=>{rows.push(step.section==='accessRecords'?{mode:'Hint only'}:{});markDirty();renderWizard();}},'+ Add another record'));
+}
+function renderPresetPicker(host){
+  host.append(el('div',{class:'note'},'Editable presets, reviewed 2026-10-04. Verify your actual quorum, software, firmware and provider agreement. Custom arrangements are supported.'));
+  const picker=el('select',{});PROFILES.forEach((p,i)=>picker.append(el('option',{value:i},p.name)));
+  host.append(picker,el('button',{class:'btn ghost',onclick:()=>{
+    const p=PROFILES[Number(picker.value)];
+    S.plan.vaults.push({name:p.name,m:p.m,n:p.n,coordinator:p.coordinator,notes:p.note,
+      profileSource:p.source,profileReviewed:'2026-10-04',
+      script:p.timelock?'Taproot / Miniscript (Liana-style leaves)':p.n===1?'Single-sig (small amounts only)':'P2WSH — wsh(sortedmulti(...))',
+      timelock:{enabled:!!p.timelock,delay:''},keys:[]});
+    markDirty();renderWizard();
+  }},'Add vault from preset'));
+}
+function appendRecoveryRecords(host,p){
+  for(const [section,fields] of Object.entries(RECORD_FIELDS)){
+    if(!(p[section]||[]).length) continue;
+    host.append(el('h3',{},RECORD_TITLES[section]));
+    (p[section]||[]).forEach((row,i)=>{
+      host.append(el('h4',{},'Record '+(i+1)));
+      const all=recordFields(section,row);
+      all.forEach(([key,label])=>{if(row[key])host.append(el('p',{},el('strong',{},label+': '),String(row[key])));});
+    });
+  }
+}
+
 /* ---------- boot ---------- */
 runGate();
 </script>
 </body>
 </html>
+

@@ -9,7 +9,7 @@ It documents HOW a cold storage setup is built and HOW heirs recover it,
 then seals that plan into one encrypted file (.csp.json). It never touches
 keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
-  - Single file, standard-library GUI (tkinter). No browser engine, no web
+  - Local Python modules, standard-library GUI (tkinter). No browser engine, no web
     storage, no cookies, no caches — nothing persists in the background.
   - Runs on Linux, macOS, and Windows. The air-gap gate fails closed unless
     the OS reports no network route, no active network interface, and no Wi-Fi
@@ -17,7 +17,7 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
   - RAM discipline: the app writes NOTHING to disk on its own — no temp
     files, no logs, no bytecode cache. The only writes are files YOU choose
     in a Save dialog. For a fully ephemeral session, run it from a live
-    Linux USB with persistence disabled, or copy this one file onto a
+    Linux USB with persistence disabled, or copy the app and companion modules onto a
     ramdisk and run it from there.
   - Encryption: AES-256-GCM, key via PBKDF2-HMAC-SHA256 (600,000 rounds).
     Only external dependency: the `cryptography` package.
@@ -33,6 +33,7 @@ Run:      python3 vault-folio.py          (normal)
 import base64
 import glob
 import json
+import math
 import os
 import platform
 import subprocess
@@ -44,6 +45,13 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 sys.dont_write_bytecode = True  # RAM discipline: never drop __pycache__ on disk
 
+from folio_memory import harden_process, memory_report, discard_plan
+from folio_beneficiary import show_beneficiary
+from folio_document import prepare_plan
+
+from folio_catalog import (PROFILES, FIELDS, EXTRA_BACKUP_FIELDS, SIGNERS,
+                           ensure_sections, extra_runbook, extra_risks, record_fields)
+
 try:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -52,8 +60,11 @@ except ImportError:
     print("Missing dependency: cryptography\nInstall with:  pip install cryptography")
     sys.exit(1)
 
+from folio_hardware_ui import add_export_controls, open_hardware
+from folio_security import MAGIC as HARDWARE_MAGIC
+
 APP_NAME = "Vault Folio"
-VERSION = "2.0-cross"
+VERSION = "2.1-guide-preview"
 PLATFORM = platform.system()  # "Linux" | "Darwin" | "Windows" | other
 ENC_MAGIC = "VAULTFOLIO/1"
 KDF_ITERATIONS = 600_000
@@ -67,10 +78,10 @@ TIERS = ["Deep vault (no timelock)", "Family vault (timelocked decay allowed)",
 SCRIPTS = ["P2WSH — wsh(sortedmulti(...))", "Taproot / Miniscript (Liana-style leaves)",
            "Single-sig (small amounts only)", "Not sure yet"]
 COORDS = ["Bitcoin Core (Yeti-style)", "Sparrow Wallet", "Nunchuk", "Liana",
-          "Casa", "Unchained", "Specter", "Other / undecided"]
+          "Casa", "Unchained", "Specter", "Electrum", "Caravan", "Other / undecided"]
 DEVICES = ["SeedSigner (stateless QR)", "Krux (stateless QR)", "Jade (stateless mode)",
            "BitBox02-class (secure element)", "Air-gapped laptop + Bitcoin Core",
-           "COLDCARD (see warning)", "Trezor / other", "Undecided"]
+           "COLDCARD (see warning)", "Trezor / other", "Undecided"] + SIGNERS
 GENMETHODS = ["Dice / coins / cards + offline calculator (EntropyLab)",
               "Device RNG (device-generated)", "Bitcoin Core wallet generation",
               "Imported existing seed", "Undecided"]
@@ -336,6 +347,7 @@ def environment_report():
         "active_network": active_network_interfaces(),
         "wifi_present": wifi_present, "wifi_active": wifi_active,
         "bluetooth": bt,
+        "memory": memory_report(),
     }
 
 
@@ -343,7 +355,7 @@ def environment_is_safe(report):
     """Only a complete, clean local report permits use; unknown means blocked."""
     return (report["route"] is False and report["active_network"] == [] and
             report["wifi_present"] == [] and report["wifi_active"] == [] and
-            report["bluetooth"] == [])
+            report["bluetooth"] == [] and report.get("memory", {}).get("safe") is True)
 
 
 GATE_HINT = {
@@ -480,6 +492,7 @@ def analyze_plan(p):
             "USB is a tunnel: it carries arbitrary data both ways.",
             "Prefer QR (UR/animated) or SD where the signer supports it; dedicate the stick and decode on both sides otherwise.")
 
+    out.extend(extra_risks(p))
     if not out:
         add("info", "No structural weaknesses detected",
             "Based on what is documented. This review checks structure, not execution.",
@@ -492,21 +505,12 @@ def recovery_routes(v):
     keys = [{"name": k.get("label") or f"Key {i+1}", "where": k.get("locations") or "location not documented"}
             for i, k in enumerate(v.get("keys") or [])]
     m, n = int(v.get("m") or 0), len(keys)
-    if not m or not n or m > n:
+    if m < 1 or not n or m > n:
         return []
-    combos = []
+    # Bound work and memory even for large, imported key inventories.
+    from itertools import combinations, islice
+    return [list(route) for route in islice(combinations(keys, m), 10)]
 
-    def pick(start, chosen):
-        if len(chosen) == m:
-            combos.append([keys[i] for i in chosen])
-            return
-        for i in range(start, n):
-            chosen.append(i)
-            pick(i + 1, chosen)
-            chosen.pop()
-
-    pick(0, [])
-    return combos
 
 
 # --------------------------------------------------------------------------
@@ -521,6 +525,10 @@ def build_runbook_text(p):
     a(f"Plan:     {p['meta'].get('planName') or '—'}")
     a(f"Owner:    {p['meta'].get('owner') or '—'}")
     a(f"Prepared: {p['meta'].get('created') or '—'}")
+    a(f"Jurisdiction: {p['meta'].get('jurisdiction') or 'Not recorded'}")
+    a(f"Legal notes: {p['meta'].get('legalNotes') or 'Not recorded'}")
+    a(f"Jurisdiction: {p['meta'].get('jurisdiction') or 'Not recorded'}")
+    a(f"Legal notes: {p['meta'].get('legalNotes') or 'Not recorded'}")
     a("")
     a("READ FIRST — THE WARNING THAT MATTERS")
     a("-" * 72)
@@ -548,7 +556,7 @@ def build_runbook_text(p):
         if v.get("tier"):
             a(f"    Purpose:     {v['tier']}")
         if v.get("m") and v.get("n"):
-            a(f"    Quorum:      {v['m']}-of-{v['n']} — any {v['m']} of {v['n']} keys can spend")
+            a(f"    Quorum:      {v['m']}-of-{v['n']} (recorded primary rule; verify the actual policy and any delayed paths)")
         if v.get("script"):
             a(f"    Script:      {v['script']}")
         if v.get("coordinator"):
@@ -570,11 +578,9 @@ def build_runbook_text(p):
             a(f"    Key {ki+1} — {k.get('label') or ''}: " + "  |  ".join(parts))
         routes = recovery_routes(v)
         if routes:
-            a(f"    Recovery routes ({len(routes)} combinations reach the quorum):")
+            a(f"    First {len(routes)} primary-key combinations (illustrative, not an eligibility check):")
             for c in routes[:10]:
                 a("      " + "  +  ".join(f"{k['name']} ({k['where']})" for k in c))
-            if len(routes) > 10:
-                a(f"      … and {len(routes)-10} more")
         a("")
     a("3 · THE MAP (WALLET DESCRIPTOR)")
     a("-" * 72)
@@ -609,7 +615,7 @@ def build_runbook_text(p):
     a("5 · RECOVERY PROCEDURE")
     a("-" * 72)
     a("Generic PSBT flow — adapt to the coordinator named above. The technical")
-    a("helper should verify current software before starting.")
+    a("helper must verify the actual policy, eligible path and current software before starting.")
     steps = [
         "Gather the required number of keys for the quorum — each from its own "
         "location, ideally with the people named above. Never enter seeds into a "
@@ -649,8 +655,12 @@ def build_runbook_text(p):
         reh.append("Family walkthrough: " + p["rehearsal"]["familyWalkthrough"])
     if p["rehearsal"].get("testSpendDate"):
         reh.append("Last test spend: " + p["rehearsal"]["testSpendDate"])
+    if p["rehearsal"].get("notes"):
+        a("Rehearsal notes: " + p["rehearsal"]["notes"])
     if reh:
         a("Rehearsal status: " + " · ".join(reh))
+    if p["rehearsal"].get("notes"):
+        a("Rehearsal notes: " + p["rehearsal"]["notes"])
     if p.get("ownerNotes"):
         a("")
         a("7 · OWNER'S NOTES")
@@ -659,6 +669,11 @@ def build_runbook_text(p):
     a("")
     a("— Generated by Vault Folio (offline). This runbook contains no keys.")
     a("  Untested backups are stories: rehearse before it matters.")
+    for vault in p.get("vaults", []):
+        for key in ("customArchitecture", "profileSource", "profileReviewed"):
+            if vault.get(key):
+                a(f"{vault.get('name', 'Vault')} — {key}: {vault[key]}")
+    a(extra_runbook(p))
     return "\n".join(L)
 
 
@@ -780,6 +795,7 @@ class App(tk.Tk):
         self.geometry("980x780")
         self.configure(bg=PAPER)
         self.plan = blank_plan()
+        self.active_plan = None
         self.dirty = False
         self._locked = False
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -792,16 +808,29 @@ class App(tk.Tk):
             if not isinstance(w, tk.Toplevel):
                 w.destroy()
 
+    def clear_session(self):
+        if not messagebox.askyesno(APP_NAME, "Clear this session? Save an encrypted copy first if needed. "
+                                  "Unsaved changes will be lost. This drops app references, not a guaranteed RAM wipe."):
+            return
+        discard_plan(self.active_plan)
+        self.active_plan = None
+        self.dirty = False
+        home_screen(self)
+
     def on_close(self):
         if self.dirty and not messagebox.askyesno(APP_NAME, "Unexported work will be lost. Quit anyway?"):
             return
+        discard_plan(self.active_plan)
+        self.active_plan = None
         self.destroy()
 
-    def header(self, status="AIR-GAP VERIFIED · OFFLINE", ok=True):
+    def header(self, status="OFFLINE / RAM CHECKS PASSED", ok=True):
         bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         bar.pack(fill="x")
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
                  font=("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
+        tk.Button(bar, text="CLEAR SESSION", command=self.clear_session,
+                  font=("Courier", 8)).pack(side="right", padx=8)
         dot = "●" if ok else "●"
         tk.Label(bar, text=f"{dot}  {status}", font=("Courier", 9),
                  bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right", padx=16)
@@ -815,12 +844,13 @@ class App(tk.Tk):
         box.place(relx=0.5, rely=0.5, anchor="center", width=660)
         tk.Label(box, text="VAULT FOLIO · AIR-GAP GATE", font=("Courier", 9),
                  fg="#8a8a84", bg="#111111").pack(anchor="w", padx=36, pady=(28, 10))
-        tk.Label(box, text="This tool only works offline.", font=("Georgia", 20),
+        tk.Label(box, text="Offline, nonpersistent session required.", font=("Georgia", 20),
                  fg=PAPER, bg="#111111").pack(anchor="w", padx=36)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=580,
                  text="Vault Folio handles the map to your cold storage. The app opens only when the OS reports "
                       "no default route, no active network interface, and no Wi-Fi or Bluetooth hardware. "
-                      "An unavailable check blocks use; there is no attestation override.").pack(
+                      "RAM-backed system paths, disabled swap and process dump protection are also required. "
+                      "An unavailable check blocks use; this is not proof against a compromised OS.").pack(
             anchor="w", padx=36, pady=(10, 16))
         self.gate_list = tk.Frame(box, bg="#111111")
         self.gate_list.pack(fill="x", padx=36)
@@ -872,6 +902,8 @@ class App(tk.Tk):
         self._gate_row(bt == [], "No Bluetooth hardware detected." if bt == [] else
                        "Bluetooth hardware detected or check unavailable.")
 
+        memory = rep.get("memory", {})
+        self._gate_row(memory.get("safe") is True, memory.get("detail", "RAM checks unavailable."))
         safe = environment_is_safe(rep)
         if safe:
             self.lift_gate()
@@ -913,7 +945,7 @@ class LockOverlay(tk.Toplevel):
                  bg="#111111").pack(anchor="w", padx=32, pady=(24, 8))
         tk.Label(box, text="Unsafe environment detected.", font=F_H2, fg=PAPER, bg="#111111").pack(anchor="w", padx=32)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=490,
-                 text="A network route, active interface, Wi-Fi or Bluetooth hardware was detected, or a check failed. Disable/remove it and re-check. Your unsaved plan remains in memory.").pack(anchor="w", padx=32, pady=(10, 14))
+                 text="A network, radio, persistent-memory risk or failed check was detected. Disable/remove it and re-check. Your unsaved plan remains in memory.").pack(anchor="w", padx=32, pady=(10, 14))
         tk.Button(box, text="RE-CHECK HARDWARE AND RESUME", font=F_MONO_B, bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2", command=self.try_resume).pack(
             anchor="w", padx=32, pady=(0, 26))
@@ -955,6 +987,10 @@ def setp(obj, path, val):
 
 def home_screen(app):
     app.clear()
+    discard_plan(app.active_plan)
+    app.active_plan = None
+    app.dirty = False
+    app.opened_format = None
     app.header()
     f = ScrollFrame(app)
     f.pack(fill="both", expand=True)
@@ -1015,6 +1051,9 @@ def home_screen(app):
 
 
 def open_file_flow(app):
+    if not environment_is_safe(environment_report()):
+        messagebox.showerror(APP_NAME, "Offline / RAM-session checks failed. Nothing opened.")
+        return
     path = filedialog.askopenfilename(
         title="Open cold storage plan file",
         filetypes=[("Cold storage plan", "*.csp *.csp.json *.json"), ("All files", "*.*")])
@@ -1028,6 +1067,11 @@ def open_file_flow(app):
     except Exception:
         messagebox.showerror(APP_NAME, "Not a readable JSON file.")
         return
+    app.opened_format = env.get("magic") if isinstance(env, dict) else None
+    if isinstance(env, dict) and env.get("magic") == HARDWARE_MAGIC:
+        open_hardware(app, env, lambda plan: open_choice(app, plan),
+                      lambda: environment_is_safe(environment_report()))
+        return
     if isinstance(env, dict) and env.get("magic") == ENC_MAGIC:
         pw = simpledialog.askstring(APP_NAME, "This plan file is sealed.\nEnter its passphrase:",
                                     show="*", parent=app)
@@ -1039,61 +1083,41 @@ def open_file_flow(app):
             messagebox.showerror(APP_NAME, str(e))
             return
         pw = None  # drop reference
+        if not environment_is_safe(environment_report()):
+            discard_plan(plan)
+            messagebox.showerror(APP_NAME, "Environment became unsafe. Nothing opened.")
+            return
         open_choice(app, plan)
     else:
         messagebox.showerror(APP_NAME, "Only encrypted Vault Folio JSON plan files can be opened.")
 
 
 def open_choice(app, plan):
+    try:
+        plan = prepare_plan(plan, blank_plan())
+    except ValueError as exc:
+        messagebox.showerror(APP_NAME, str(exc))
+        return
+    app.active_plan = plan
     dlg = tk.Toplevel(app)
     dlg.configure(bg=PAPER)
     dlg.title(APP_NAME)
     dlg.grab_set()
     tk.Label(dlg, text="Plan opened: " + (plan["meta"].get("planName") or "untitled"),
              font=F_H2, bg=PAPER, fg=INK).pack(padx=24, pady=(20, 4), anchor="w")
-    tk.Label(dlg, text="Who is opening this file?", font=F_BODY, bg=PAPER, fg="#2e2e2e").pack(padx=24, anchor="w")
+    tk.Label(dlg, text="Choose how to open this guide. Viewing makes no changes; editing saves a new encrypted copy.", font=F_BODY, bg=PAPER, fg="#2e2e2e").pack(padx=24, anchor="w")
     row = tk.Frame(dlg, bg=PAPER)
     row.pack(padx=24, pady=18, anchor="w")
-    tk.Button(row, text="I AM THE OWNER — EDIT", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
+    tk.Button(row, text="PLAN EDITOR — UPDATE & RE-ENCRYPT", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
               padx=12, pady=8, cursor="hand2",
               command=lambda: (dlg.destroy(), start_wizard(app, plan))).pack(side="left", padx=(0, 8))
-    tk.Button(row, text="FAMILY / EXECUTOR — RUNBOOK", font=F_MONO_B, bg=PAPER, fg=INK, relief="flat",
+    tk.Button(row, text="BENEFICIARY VIEW — STEP-BY-STEP GUIDE", font=F_MONO_B, bg=PAPER, fg=INK, relief="flat",
               highlightthickness=1, highlightbackground=INK, padx=12, pady=8, cursor="hand2",
               command=lambda: (dlg.destroy(), show_heir(app, plan))).pack(side="left")
 
 
 def show_heir(app, plan):
-    app.clear()
-    app.header(status="RECOVERY MODE · READ-ONLY")
-    bar = tk.Frame(app, bg=PAPER2, highlightthickness=1, highlightbackground=INK)
-    bar.pack(fill="x", padx=40, pady=(16, 0))
-    tk.Label(bar, text="HEIR & EXECUTOR RUNBOOK", font=F_MONO_B, bg=PAPER2, fg=INK).pack(side="left", padx=14, pady=8)
-    tk.Label(bar, text="Print it, follow it slowly, test with a small amount first.",
-             font=("Helvetica", 9), bg=PAPER2, fg="#6b6b6b").pack(side="left", padx=8)
-    f = ScrollFrame(app)
-    f.pack(fill="both", expand=True, padx=40, pady=16)
-
-    # --- the pictures first: the quorum, then how coins cross the air gap ---
-    diag = tk.Frame(f.inner, bg=PAPER)
-    diag.pack(fill="x", pady=(4, 10))
-    for vi, v in enumerate(plan["vaults"]):
-        cv = tk.Canvas(diag, bg=PAPER, highlightthickness=0)
-        canvas_quorum(cv, v, vi)
-        cv.pack(anchor="w", pady=(0, 12))
-    cv2 = tk.Canvas(diag, bg=PAPER, highlightthickness=0)
-    canvas_psbt_flow(cv2, plan["signing"].get("medium"))
-    cv2.pack(anchor="w", pady=(0, 6))
-
-    txt = tk.Text(f.inner, font=("Courier", 10), bg="#ffffff", fg=INK, relief="flat",
-                  wrap="word", padx=18, pady=18, spacing1=2, spacing3=2, height=28)
-    txt.insert("1.0", build_runbook_text(plan))
-    txt.configure(state="disabled")
-    txt.pack(fill="both", expand=True)
-    row = tk.Frame(app, bg=PAPER)
-    row.pack(fill="x", padx=40, pady=(0, 20))
-    tk.Button(row, text="CLOSE", font=F_MONO_B, bg=PAPER, fg=INK, relief="flat",
-              highlightthickness=1, highlightbackground=INK, padx=12, pady=8, cursor="hand2",
-              command=lambda: home_screen(app)).pack(side="left")
+    show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text)
 
 
 # --------------------------------------------------------------------------
@@ -1103,11 +1127,16 @@ STEP_DEFS = [
     ("start", "Read this first"),
     ("identity", "Plan & owner"),
     ("people", "Executors, trustees, heirs"),
+    ("custodians", "Lawyers & backup custodians"),
     ("vaults", "Vault architecture & keys"),
     ("signing", "How spending works"),
     ("backups", "Descriptor & config backups"),
+    ("inventory", "Backup inventory & hints"),
+    ("paths", "Alternate recovery paths"),
+    ("access", "Journal & watch-only access"),
     ("inheritance", "Inheritance mechanism"),
     ("rehearsal", "Has it been tested?"),
+    ("instructions", "Family recovery steps"),
     ("review", "Risk review"),
     ("export", "Encrypt & export"),
 ]
@@ -1135,11 +1164,12 @@ STEP_INTROS = {
 class Wizard:
     def __init__(self, app, plan):
         self.app = app
-        self.plan = plan
+        self.plan = ensure_sections(plan)
+        self.app.active_plan = self.plan
         self.step = 0
         self.vars = {}
         app.clear()
-        app.header()
+        app.header(status="PLAN EDITOR · SAVE ENCRYPTED TO KEEP CHANGES")
 
         shell = tk.Frame(app, bg=PAPER)
         shell.pack(fill="both", expand=True)
@@ -1189,6 +1219,8 @@ class Wizard:
             self.step += 1
             self.render()
         else:
+            if self.app.dirty and not messagebox.askyesno(APP_NAME, "Leave without saving your changes to an encrypted file?"):
+                return
             home_screen(self.app)
 
     def mark_dirty(self, *_):
@@ -1270,7 +1302,7 @@ class Wizard:
         self.next_btn.configure(text=("DONE" if self.step == len(STEP_DEFS)-1 else "CONTINUE →"))
         pad = tk.Frame(c, bg=PAPER)
         pad.pack(fill="both", expand=True, padx=44, pady=28)
-        folio_label(pad, folio).pack(anchor="w")
+        folio_label(pad, f"Section {self.step + 1} of {len(STEP_DEFS)}").pack(anchor="w")
         tk.Label(pad, text=title, font=F_H2, bg=PAPER, fg=INK, anchor="w").pack(anchor="w", pady=(4, 6))
         if intro:
             tk.Label(pad, text=intro, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left",
@@ -1308,16 +1340,15 @@ class Wizard:
             tk.Label(fr, text="□  " + r, font=F_BODY, bg=PAPER, fg=INK, anchor="w").pack(padx=12, pady=8, anchor="w")
         self.note(pad, "Estimated time: 30–60 minutes if your setup exists; longer if this questionnaire "
                        "reveals it is still a story. That is the point of the exercise.")
-        tk.Label(pad, text="FOR MAXIMUM HYGIENE (OPTIONAL BUT RECOMMENDED)", font=F_MONO_B,
+        tk.Label(pad, text="REQUIRED NONPERSISTENT SESSION", font=F_MONO_B,
                  bg=PAPER, fg=INK).pack(anchor="w", pady=(18, 6))
         hygiene = [
-            "Boot a live Linux USB (no persistence) on a machine with wireless physically removed, "
-            "and run this single file from there — the OS writes nothing to disk.",
-            "Or copy vault-folio.py alone onto a ramdisk and run it from there. The app itself "
-            "never writes temp files, logs, or caches; the only disk writes are the files you "
-            "explicitly save at the end.",
-            "Verify the tool on any machine first:  python3 vault-folio.py --self-test",
-            "When done, shut down. RAM is volatile — nothing survives power-off.",
+            "Use a trusted nonpersistent live Linux session with swap and hibernation disabled. "
+            "Writable system, home and temporary paths must be RAM-backed and offline checks must pass.",
+            "Copy vault-folio.py and every folio_*.py companion module together. "
+            "The app saves only ciphertext, using a temporary encrypted sibling for atomic replacement.",
+            "Verify first with synthetic data: python3 -B vault-folio.py --self-test",
+            "Clear the session and fully shut down when finished. Neither action guarantees secure RAM erasure.",
         ]
         for h in hygiene:
             tk.Label(pad, text="·  " + h, font=("Helvetica", 9), bg=PAPER, fg="#2e2e2e",
@@ -1398,11 +1429,96 @@ class Wizard:
         self.mark_dirty()
         self.draw_heirs()
 
+    def record_page(self, title, section):
+        pad = self.page("Family recovery details", title,
+                        "Add as many records as needed. Use recognizable aliases and clues; exact locations are optional. "
+                        "Use hints by default. Optional direct access details belong only in the dedicated access section. "
+                        "Never enter Bitcoin seed words or private keys.")
+        if section == "backupRecords":
+            self.note(pad, "SLIP39 shares and Seed XOR parts reconstruct ONE signing key; they are not multisig signers. "
+                           "Keep the separate location clues needed to find this encrypted package outside it too.")
+        if section == "accessRecords":
+            self.note(pad, "Choose hints or optional direct access details for journals, watch-only wallets and documents. "
+                           "Direct credentials appear in the decrypted heir guide. Never use these fields for Bitcoin seeds, "
+                           "private keys or wallet seed passphrases. Switching to hint-only removes a previously entered direct credential.")
+        if section == "lawyers":
+            self.note(pad, "Record agreed access and release instructions, not assumed legal powers. "
+                           "Opening the package does not authorize spending bitcoin.")
+        container = tk.Frame(pad, bg=PAPER)
+        container.pack(fill="x")
+        rows = self.plan[section]
+        def redraw():
+            for widget in container.winfo_children():
+                widget.destroy()
+            for i, record in enumerate(rows):
+                frame = ttk.LabelFrame(container, text=f"Record {i + 1}")
+                frame.pack(fill="x", pady=8)
+                fields = record_fields(section, record)
+                for key, label, options in fields:
+                    tk.Label(frame, text=label, anchor="w", wraplength=580).pack(anchor="w", padx=8, pady=(6, 0))
+                    value = tk.StringVar(value=record.get(key, ""))
+                    def update(*_, row=record, name=key, var=value):
+                        row[name] = var.get()
+                        if name == "mode" and var.get() != "Direct access details inside encrypted guide":
+                            row.pop("directAccess", None)
+                        self.mark_dirty()
+                    value.trace_add("write", update)
+                    widget = ttk.Combobox(frame, textvariable=value, values=options) if options else ttk.Entry(frame, textvariable=value)
+                    widget.pack(fill="x", padx=8)
+                    if key == "directAccess":
+                        widget.configure(show="*")
+                    # Hold Tk variable alive for the lifetime of the field.
+                    widget._folio_variable = value
+                    if key in ("scheme", "kind", "mode"):
+                        widget.bind("<<ComboboxSelected>>", lambda *_: redraw())
+                def remove(index=i):
+                    if messagebox.askyesno(APP_NAME, "Remove this record?", parent=self.app):
+                        rows.pop(index)
+                        self.mark_dirty()
+                        redraw()
+                ttk.Button(frame, text="Remove record", command=remove).pack(anchor="w", padx=8, pady=8)
+        def add():
+            rows.append({"mode": "Hint only"} if section == "accessRecords" else {})
+            self.mark_dirty()
+            redraw()
+        redraw()
+        ttk.Button(pad, text="+ Add another record", command=add).pack(anchor="w", pady=10)
+
+    def page_custodians(self):
+        self.record_page("Lawyers, trustees & backup custodians", "lawyers")
+
+    def page_inventory(self):
+        self.record_page("Backup inventory & family location hints", "backupRecords")
+
+    def page_instructions(self):
+        self.record_page("Your step-by-step instructions for family", "instructions")
+
+    def page_access(self):
+        self.record_page("EntropyLab journal, watch-only wallet & access instructions", "accessRecords")
+
+    def page_paths(self):
+        self.record_page("Alternate recovery paths & dependencies", "recoveryPaths")
+
     # ---- folio 03: vaults (nested keys) -----------------------------------
     def page_vaults(self):
         pad = self.page("Folio · 03 · The vaults", "Vault architecture & keys", STEP_INTROS["vaults"])
         self.note(pad, "Rule: never record seed words, xprvs, or full xpub strings here. A key entry describes "
                        "WHICH key it is, WHAT signs with it, and WHERE its backups live — nothing that can spend.")
+        self.note(pad, "Presets are editable documentation starting points, not wallet creation or compatibility guarantees. "
+                       "Catalog reviewed 2026-10-04; verify your exact plan and software. Use Custom for any other arrangement.")
+        preset = tk.StringVar(value=PROFILES[0]["name"])
+        ttk.Combobox(pad, textvariable=preset, values=[x["name"] for x in PROFILES], state="readonly").pack(fill="x")
+        def add_preset():
+            profile = next(x for x in PROFILES if x["name"] == preset.get())
+            self.plan["vaults"].append({"name": profile["name"], "m": profile["m"], "n": profile["n"],
+                "coordinator": profile["coordinator"], "notes": profile["note"],
+                "profileSource": profile["source"], "profileReviewed": "2026-10-04",
+                "script": "Single-sig (small amounts only)" if profile["n"] == 1 and not profile.get("timelock") else
+                          ("Taproot / Miniscript (Liana-style leaves)" if profile.get("timelock") else "P2WSH — wsh(sortedmulti(...))"),
+                "timelock": {"enabled": bool(profile.get("timelock")), "delay": ""}, "keys": []})
+            self.mark_dirty()
+            self.draw_vaults()
+        ttk.Button(pad, text="Add vault from selected preset", command=add_preset).pack(anchor="w", pady=8)
         self.vaults_box = tk.Frame(pad, bg=PAPER)
         self.vaults_box.pack(fill="x")
         self.draw_vaults()
@@ -1444,6 +1560,8 @@ class Wizard:
                          anchor="w", wraplength=580, justify="left").pack(anchor="w")
 
         row("Vault name", "name")
+        row("Preset source / guide revision (optional)", "profileSource")
+        row("Custom architecture / provider details", "customArchitecture")
         row("Purpose / tier", "tier", TIERS,
             "Theft-resistance and inheritance want opposite shapes. A small timelocked family pile plus a "
             "larger no-timelock deep vault beats one script trying to do both.")
@@ -1676,58 +1794,11 @@ class Wizard:
     # ---- folio 09: export -------------------------------------------------
     def page_export(self):
         pad = self.page("Folio · 09 · Sealing the file", "Encrypt & export the inheritance file")
-        tk.Label(pad, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left", wraplength=640,
-                 text="The plan is sealed with a passphrase using AES-256-GCM (key derived with PBKDF2-SHA-256, "
-                      "600,000 rounds). The encrypted file is safe to back up in many places. The passphrase "
-                      "must travel by a different road — sealed with the trustee, split with a lawyer, memorized "
-                      "by two people. Whoever holds file + passphrase can read the plan.").pack(anchor="w")
-        self.note(pad, "The passphrase problem is yours to solve deliberately. If the passphrase dies with you, "
-                       "this file is a brick. Recommended: sealed copy with the trustee, plus instructions in "
-                       "the sealed letter on who holds it.", warn=True)
-
-        self._label(pad, "Encryption passphrase", "Aim for 4+ random words or 20+ characters. "
-                                                  "Write it down and store it apart from this file.")
-        pw1 = tk.Entry(pad, show="*", font=F_BODY, bg="#ffffff", relief="solid", bd=1)
-        pw1.pack(fill="x")
-        self._label(pad, "Confirm passphrase")
-        pw2 = tk.Entry(pad, show="*", font=F_BODY, bg="#ffffff", relief="solid", bd=1)
-        pw2.pack(fill="x")
-        status = tk.Label(pad, text="", font=F_MONO, bg=PAPER, fg="#6b6b6b", anchor="w")
-        status.pack(fill="x", pady=(10, 0))
-
-        def do_export():
-            p1, p2 = pw1.get(), pw2.get()
-            if len(p1) < 8:
-                status.configure(text="PASSPHRASE TOO SHORT (MIN 8 CHARACTERS)", fg=FLAG)
-                return
-            if p1 != p2:
-                status.configure(text="PASSPHRASES DO NOT MATCH", fg=FLAG)
-                return
-            base = ((self.plan["meta"].get("planName") or "cold-storage-plan").lower().replace(" ", "-"))
-            base = "".join(c if c.isalnum() or c in ".-" else "-" for c in base)
-            path = filedialog.asksaveasfilename(defaultextension=".csp.json", initialfile=base + ".csp.json",
-                                                filetypes=[("Cold storage plan", "*.csp.json *.csp")])
-            if not path:
-                return
-            status.configure(text="DERIVING KEY (PBKDF2-SHA-256, 600,000 ROUNDS)…", fg="#6b6b6b")
-            pad.update_idletasks()
-            env = encrypt_plan(self.plan, p1)
-            with open(path, "w") as fh:
-                json.dump(env, fh, indent=2)
-            pw1.delete(0, "end")
-            pw2.delete(0, "end")
-            p1 = p2 = None
-            self.app.dirty = False
-            status.configure(text="SEALED. STORE COPIES IN 2+ PLACES; THE PASSPHRASE TRAVELS SEPARATELY.", fg=OK)
-
-        row = tk.Frame(pad, bg=PAPER)
-        row.pack(anchor="w", pady=14)
-        tk.Button(row, text="SAVE ENCRYPTED PLAN (.CSP.JSON)", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-                  padx=14, pady=8, cursor="hand2", command=do_export).pack(side="left", padx=(0, 8))
-        tk.Label(pad, text="Only the encrypted plan is saved. The recovery guide is viewed inside this app "
-                           "after the heir opens the file with its passphrase; no plaintext guide export is created.",
-                 font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER, justify="left",
-                 wraplength=620).pack(anchor="w", pady=(6, 0))
+        self.note(pad, "Choose any independent unlock methods for this guide. Give a passphrase or enrolled YubiKey "
+                       "to your lawyer if desired. Keep the program, encrypted file, and non-secret discovery instructions "
+                       "where family can find them. Release conditions are instructions, not a software-enforced time lock.")
+        add_export_controls(pad, self.app, self.plan,
+                            lambda: environment_is_safe(environment_report()))
 
         # --- preview: the pictures the family will see ---------------------
         if self.plan["vaults"]:
@@ -1804,9 +1875,11 @@ def main():
     if "--self-test" in sys.argv:
         self_test()
         return
+    harden_process()  # RAM gate blocks if this cannot be established.
     app = App()
     app.mainloop()
 
 
 if __name__ == "__main__":
     main()
+
