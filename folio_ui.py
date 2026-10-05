@@ -67,6 +67,8 @@ class ScrollFrame(tk.Frame):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self.canvas.itemconfig(self._win, width=self.canvas.winfo_width())
 
+
+def init_style(root):
     """One-time ttk theme setup; call after the root window exists."""
     style = ttk.Style(root)
     try:
