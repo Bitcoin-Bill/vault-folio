@@ -94,7 +94,12 @@
       const main=document.getElementById("main");
       if(!q){ screen=2; render(); return; }
       const choice=(q[4]||[]).map(([v,l])=>`<button data-v="${v}">${l}</button>`).join("");
-      main.innerHTML=`<p class="muted">Question ${qIndex+1} of ${questions.length}</p><h2>${q[1]} <button onclick="help('${q[2].replace(/'/g,"")}')">?</button></h2><p class="muted">${q[2]}</p><div class="card">${q[3]==="choice"?choice:'<input id="ans">'}<div class="row"><button onclick="qIndex=Math.max(0,qIndex-1);renderQuestion()">Back</button>${q[3]==="choice"?"":'<button class="primary" onclick="take(document.getElementById(\\'ans\\').value)">Next</button>'}</div></div>`;
+      const input = q[3] === 'choice' ? choice : '<input id="ans">';
+      const next = q[3] === 'choice' ? '' : '<button class="primary" id="next">Next</button>';
+      main.innerHTML = '<p class="muted">Question ' + (qIndex+1) + ' of ' + questions.length + '</p><h2>' + q[1] + ' <button id="help">?</button></h2><p class="muted">' + q[2] + '</p><div class="card">' + input + '<div class="row"><button id="back">Back</button>' + next + '</div></div>';
+      document.getElementById('help').onclick = function(){ help(q[2]); };
+      document.getElementById('back').onclick = function(){ qIndex = Math.max(0, qIndex-1); renderQuestion(); };
+      if (document.getElementById('next')) document.getElementById('next').onclick = function(){ take(document.getElementById('ans').value); };
       document.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>take(b.dataset.v));
     }
     function take(value){ if(seedish(value)){ alert("Refused. Use an invented label."); return; } plan[questions[qIndex][0]]=value.trim(); qIndex++; renderQuestion(); }
