@@ -284,7 +284,7 @@ def choose_method(app,env):
     return result[0]
 
 
-def open_hardware(app,env,on_success,environment_safe):
+def open_hardware(app,env,on_success,environment_safe,return_key=False):
     try:security.validate(env)
     except ValueError as exc:
         messagebox.showerror("Invalid guide",str(exc),parent=app);return
@@ -301,5 +301,5 @@ def open_hardware(app,env,on_success,environment_safe):
             answer=simpledialog.askstring(f"Family question {i} of {len(meta['questions'])}",question,show="*",parent=app)
             if answer is None:return
             credential.append(answer)
-    operation=lambda provider:security.open_package(env,method_index=index,credential=credential,response_provider=provider)
+    operation=lambda provider:security.open_package(env,method_index=index,credential=credential,response_provider=provider,return_key=return_key)
     hardware_job(app,operation,on_success,environment_safe,[meta["label"]])

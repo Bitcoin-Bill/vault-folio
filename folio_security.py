@@ -4,6 +4,7 @@ Every configured method is an independent alternative, never a threshold.
 Family questions are knowledge-based passwords, not a stronger security factor.
 """
 import base64
+import copy
 import json
 import os
 import re
@@ -202,7 +203,8 @@ def seal(plan, methods, *, response_provider=yubikey_response):
     return env
 
 
-def open_package(env, *, method_index=0, credential=None, response_provider=yubikey_response):
+def open_package(env, *, method_index=0, credential=None, response_provider=yubikey_response,
+               return_key=False):
     validate(env)
     if type(method_index) is not int or not 0 <= method_index < len(env["methods"]):
         raise ValueError("Choose a listed unlock method.")
@@ -217,6 +219,37 @@ def open_package(env, *, method_index=0, credential=None, response_provider=yubi
         plan = json.loads(plaintext.decode("utf-8"))
         if not isinstance(plan, dict):
             raise ValueError("Invalid guide document.")
+        if return_key:
+            return plan, dek
         return plan
     except (InvalidTag, UnicodeError, ValueError) as exc:
         raise ValueError("Unable to unlock: incorrect credential, wrong key, or damaged file.") from exc
+
+
+def reseal_preserving_methods(plan, env, dek):
+    """Re-encrypt changed plan data under the SAME data key and method set.
+
+    Every existing unlock method keeps working and no credential is asked
+    for, because each method's wrapped key stays byte-identical; only the
+    plan ciphertext and its IV are replaced. The DEK comes from the open
+    that produced this plan (the plaintext already lives in RAM, so holding
+    its key adds no new exposure).
+    """
+    validate(env)
+    if not isinstance(dek, (bytes, bytearray)) or len(dek) != 32:
+        raise ValueError("Cannot re-seal without the key from the original open.")
+    header_old = {key: value for key, value in env.items() if key != "data"}
+    try:
+        AESGCM(bytes(dek)).decrypt(unb64(env["iv"], 12), unb64(env["data"]), canonical(header_old))
+    except InvalidTag as exc:
+        raise ValueError("This key does not match this file; refusing to save.") from exc
+    plaintext = json.dumps(plan, ensure_ascii=False).encode("utf-8")
+    if len(plaintext) > MAX_BYTES:
+        raise ValueError("Guide too large.")
+    new = {"magic": env["magic"], "cipher": env["cipher"], "iv": b64(os.urandom(12)),
+           "methods": copy.deepcopy(env["methods"])}
+    header = {key: value for key, value in new.items() if key != "data"}
+    new["data"] = b64(AESGCM(bytes(dek)).encrypt(unb64(new["iv"], 12), plaintext,
+                                                 canonical(header)))
+    validate(new)
+    return new

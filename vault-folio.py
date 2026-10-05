@@ -62,6 +62,8 @@ except ImportError:
 
 from folio_hardware_ui import add_export_controls, open_hardware
 from folio_security import MAGIC as HARDWARE_MAGIC
+from folio_security import reseal_preserving_methods
+from folio_storage import save_encrypted
 from folio_phase1 import start_phase1
 from folio_synthetic import TEST_MARKER, load_synthetic_plan, save_synthetic_plan
 
@@ -1027,6 +1029,9 @@ class App(tk.Tk):
         self.dirty = False
         self._locked = False
         self.test_mode = test_mode
+        self.guide_path = None    # file the open guide came from
+        self.guide_env = None     # original envelope (public parts)
+        self.guide_dek = None     # data key from the open; lets notes re-seal losslessly
         self.ubuntu_test = ubuntu_test
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
@@ -1256,6 +1261,9 @@ def home_screen(app):
     app.active_plan = None
     app.dirty = False
     app.opened_format = None
+    app.guide_path = None
+    app.guide_env = None
+    app.guide_dek = None
     app.header()
     frame = ScrollFrame(app)
     frame.pack(fill="both", expand=True)
@@ -1319,7 +1327,7 @@ def open_file_flow(app):
         if password is None:
             return
         try:
-            plan = load_synthetic_plan(path, password)
+            plan, guide_env, guide_dek = load_synthetic_plan(path, password, return_details=True)
         except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
             messagebox.showerror(APP_NAME, "Could not open this marked synthetic test guide.", parent=app)
             return
@@ -1327,6 +1335,8 @@ def open_file_flow(app):
             password = None
         app.opened_format = "VAULTFOLIO/2 · SYNTHETIC TEST"
         app.guide_path = path
+        app.guide_env = guide_env
+        app.guide_dek = guide_dek
         open_choice(app, plan)
         return
     if not app.ubuntu_test and not environment_is_safe(environment_report(), test_mode=False):
@@ -1348,8 +1358,15 @@ def open_file_flow(app):
     app.opened_format = env.get("magic") if isinstance(env, dict) else None
     app.guide_path = path
     if isinstance(env, dict) and env.get("magic") == HARDWARE_MAGIC:
-        open_hardware(app, env, lambda plan: open_choice(app, plan),
-                      lambda: app.ubuntu_test or environment_is_safe(environment_report(), test_mode=False))
+        def opened_v2(result, _env=env):
+            plan, dek = result
+            app.guide_env = _env
+            app.guide_dek = dek
+            open_choice(app, plan)
+
+        open_hardware(app, env, opened_v2,
+                      lambda: app.ubuntu_test or environment_is_safe(environment_report(), test_mode=False),
+                      return_key=True)
         return
     if isinstance(env, dict) and env.get("magic") == ENC_MAGIC:
         pw = simpledialog.askstring(APP_NAME, "This plan file is sealed.\nEnter its passphrase:",
@@ -1369,6 +1386,45 @@ def open_file_flow(app):
         open_choice(app, plan)
     else:
         messagebox.showerror(APP_NAME, "Only encrypted Vault Folio JSON plan files can be opened.")
+
+
+def save_guide_notes(app, plan):
+    """Persist beneficiary notes/checklist into the file the guide came from.
+
+    A V2 envelope is re-sealed with the SAME data key and method set, so
+    every configured unlock method keeps working and no credential is asked
+    for. A legacy V1 file is re-sealed only after the entered passphrase is
+    verified to open the current file, so a typo can never re-key it.
+    """
+    path = getattr(app, "guide_path", None)
+    if not path:
+        messagebox.showinfo(APP_NAME, "Open the encrypted file again, then save the notes.", parent=app)
+        return
+    env = getattr(app, "guide_env", None)
+    dek = getattr(app, "guide_dek", None)
+    try:
+        if env is not None and dek is not None:
+            save_encrypted(path, reseal_preserving_methods(plan, env, dek))
+        else:
+            pw = simpledialog.askstring(APP_NAME, "Enter this guide's passphrase to save the notes:",
+                                        show="*", parent=app)
+            if not pw:
+                return
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    current = json.load(handle)
+                decrypt_plan(current, pw)  # verify BEFORE anything is overwritten
+                envelope = encrypt_plan(plan, pw)
+            except (OSError, ValueError, TypeError, UnicodeError):
+                messagebox.showerror(APP_NAME, "That passphrase does not open this file. Nothing was saved.", parent=app)
+                return
+            finally:
+                pw = None
+            save_encrypted(path, envelope)
+    except Exception as exc:
+        messagebox.showerror(APP_NAME, str(exc), parent=app)
+        return
+    messagebox.showinfo(APP_NAME, "Notes and checklist saved. Every existing unlock method still opens the file.", parent=app)
 
 
 def open_choice(app, plan):
@@ -1421,7 +1477,8 @@ def show_heir(app, plan):
         xbar.grid(row=1, column=0, sticky="ew")
         family_map.rowconfigure(0, weight=1)
         family_map.columnconfigure(0, weight=1)
-    show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams)
+    show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams,
+                     save_plan=lambda current: save_guide_notes(app, current))
 
 
 # --------------------------------------------------------------------------

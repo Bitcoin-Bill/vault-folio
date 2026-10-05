@@ -29,16 +29,18 @@ def seal_synthetic_plan(plan, passphrase):
     return envelope
 
 
-def open_synthetic_envelope(envelope, passphrase):
+def open_synthetic_envelope(envelope, passphrase, return_key=False):
     """Open only a marked, passphrase-only synthetic test package."""
     security.validate(envelope)
     methods = envelope.get("methods", [])
     if len(methods) != 1 or methods[0].get("meta", {}).get("kind") != "passphrase":
         raise ValueError("Test mode opens only passphrase-protected synthetic test files.")
-    plan = security.open_package(envelope, credential=passphrase)
+    plan, dek = security.open_package(envelope, credential=passphrase, return_key=True)
     meta = plan.get("meta") if isinstance(plan, dict) else None
     if not isinstance(meta, dict) or meta.get(TEST_MARKER) is not True:
         raise ValueError("This is not a marked synthetic test file.")
+    if return_key:
+        return plan, dek
     return plan
 
 
@@ -48,7 +50,7 @@ def save_synthetic_plan(path, plan, passphrase):
     save_encrypted(path, envelope, max_bytes=MAX_FILE_BYTES)
 
 
-def load_synthetic_plan(path, passphrase):
+def load_synthetic_plan(path, passphrase, return_details=False):
     """Load a bounded encrypted file and require its synthetic marker."""
     target = Path(path)
     if target.stat().st_size > MAX_FILE_BYTES:
@@ -62,4 +64,7 @@ def load_synthetic_plan(path, passphrase):
         raise ValueError("This test file could not be opened.") from exc
     if not isinstance(envelope, dict):
         raise ValueError("This test file could not be opened.")
-    return open_synthetic_envelope(envelope, passphrase)
+    plan, dek = open_synthetic_envelope(envelope, passphrase, return_key=True)
+    if return_details:
+        return plan, envelope, dek
+    return plan
