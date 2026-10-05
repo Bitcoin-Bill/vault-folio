@@ -69,6 +69,37 @@ class Phase1Test(unittest.TestCase):
         self.assertEqual(interview.index, 1)
         self.assertEqual(interview.restore_value, "Ada")
 
+    def test_finished_setup_moves_to_people_questions(self):
+        state = new_state()
+        apply_answer(state, "structure", "single")
+        apply_answer(state, "name", "Savings")
+        apply_answer(state, "backup_copies", "one")
+        apply_answer(state, "delayed", "no")
+        apply_answer(state, "another", "no")
+        keys = [item[0] for item in interview_questions(state)]
+        self.assertEqual(keys[0], "contact")
+        self.assertEqual(keys[-1], "test_spend")
+        self.assertNotIn("structure", keys)
+
+    def test_provider_delay_is_not_called_an_onchain_timelock(self):
+        state = new_state()
+        apply_answer(state, "structure", "single")
+        apply_answer(state, "name", "Savings")
+        apply_answer(state, "backup_copies", "one")
+        apply_answer(state, "delayed", "yes")
+        apply_answer(state, "delayed_kind", "provider")
+        apply_answer(state, "another", "no")
+        plan = build_plan(state)
+        self.assertNotIn("On-chain timelock", plan["inheritance"]["mechanism"])
+        self.assertEqual(plan["recoveryPaths"][0]["mechanism"], "Provider-enforced off-chain delay")
+
+    def test_threshold_can_be_unknown(self):
+        state = new_state()
+        self.assertIsNone(apply_answer(state, "structure", "multi"))
+        self.assertIsNone(apply_answer(state, "n", "3"))
+        self.assertIsNone(apply_answer(state, "m", "unsure"))
+        self.assertEqual(state["draft"]["m"], "unsure")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,7 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
 Requires: Python 3.9+, tkinter, cryptography
 Run:      python3 vault-folio.py          (normal; requires verified RAM-backed session)
-          python3 vault-folio.py --test-only-synthetic-questionnaire (no checks or file access)
+          python3 vault-folio.py --test-session (Tails/test launch: skips the air-gap gate; invented data only)
           python3 vault-folio.py --self-test   (headless crypto/risk check)
 """
 
@@ -62,6 +62,7 @@ except ImportError:
 from folio_hardware_ui import add_export_controls, open_hardware
 from folio_security import MAGIC as HARDWARE_MAGIC
 from folio_phase1 import start_phase1
+from folio_synthetic import TEST_MARKER, load_synthetic_plan, save_synthetic_plan
 
 APP_NAME = "Vault Folio"
 VERSION = "2.1-guide-preview"
@@ -358,6 +359,20 @@ def environment_is_safe(report, *, test_mode=False):
     return (report["route"] is False and report["active_network"] == [] and
             report["wifi_present"] == [] and report["wifi_active"] == [] and
             report["bluetooth"] == [] and paths_ok)
+
+
+def disable_networking():
+    """Ask the OS to drop networking. Returns a short result line."""
+    if PLATFORM != "Linux":
+        return "This button only turns networking off on Linux."
+    nm = _run(["nmcli", "networking", "off"], timeout=8.0)
+    if default_route_exists() is True:
+        _run(["pkexec", "ip", "route", "del", "default"], timeout=30.0)
+    if default_route_exists() is False:
+        return "Networking is off and the default route is gone. Checking again."
+    if nm is None:
+        return "Could not turn networking off. The route is still there."
+    return "Asked NetworkManager to stop. The route is still there."
 
 
 GATE_HINT = {
@@ -869,8 +884,8 @@ class App(tk.Tk):
                 w.destroy()
 
     def clear_session(self):
-        prompt = ("Clear this test session? All entered data will be discarded and cannot be saved. "
-                  "This drops app references, not a guaranteed RAM wipe." if self.test_mode else
+        prompt = ("Clear this synthetic test session? Unsaved answers will be discarded. Any saved test file "
+                  "remains at its chosen destination. This drops app references, not a guaranteed RAM wipe." if self.test_mode else
                   "Clear this session? Save an encrypted copy first if needed. "
                   "Unsaved changes will be lost. This drops app references, not a guaranteed RAM wipe.")
         if not messagebox.askyesno(APP_NAME, prompt):
@@ -889,7 +904,7 @@ class App(tk.Tk):
 
     def header(self, status="OFFLINE / RAM CHECKS PASSED", ok=True):
         if self.test_mode:
-            status, ok = "TEST ONLY · NO PLAN FILE OPEN/SAVE · RAM PATH CHECK SKIPPED", False
+            status, ok = "TEST ONLY · SYNTHETIC FILES · ENVIRONMENT CHECKS SKIPPED", False
         bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         bar.pack(fill="x")
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
@@ -903,8 +918,7 @@ class App(tk.Tk):
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
         if self.test_mode:
-            # This mode is limited to synthetic questionnaire/UI exploration.
-            # It never opens files or exposes credential/export controls.
+            # Test launch only. Skips the air-gap gate so the interface and encrypted save can be tried.
             self.lift_gate()
             return
         self.clear()
@@ -925,13 +939,27 @@ class App(tk.Tk):
         self.gate_list = tk.Frame(box, bg="#111111")
         self.gate_list.pack(fill="x", padx=36)
         tk.Label(box, font=("Helvetica", 9), fg="#8a8a84", bg="#111111", justify="left", wraplength=580,
-                 text="Remove Wi-Fi and Bluetooth hardware and disconnect all network cables/adapters. "
-                      + GATE_HINT).pack(anchor="w", padx=36, pady=(14, 6))
+                 text="A route can remain after the Wi-Fi card is removed. This screen can turn networking off and check again. "
+                      "It cannot remove Bluetooth hardware or put an installed home folder in RAM.").pack(
+            anchor="w", padx=36, pady=(14, 6))
         btns = tk.Frame(box, bg="#111111")
         btns.pack(anchor="w", padx=36, pady=(6, 30))
-        tk.Button(btns, text="RE-CHECK ENVIRONMENT", font=F_MONO_B, bg=PAPER, fg=INK,
+        tk.Button(btns, text="TURN NETWORKING OFF AND CHECK", font=F_MONO_B, bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2",
-                  command=self.run_gate).pack(side="left")
+                  command=self.offer_disable_network).pack(side="left")
+        tk.Button(btns, text="CHECK AGAIN", font=F_MONO_B, bg="#111111", fg=PAPER,
+                  relief="flat", padx=16, pady=8, cursor="hand2",
+                  command=self.run_gate).pack(side="left", padx=(8, 0))
+        self.run_gate()
+
+    def offer_disable_network(self):
+        if not messagebox.askokcancel(
+                APP_NAME,
+                "Turn networking off and delete the default route, then check again?\n\n"
+                "This lasts until you turn networking back on. It does not remove Bluetooth hardware "
+                "and does not make a disk-backed home folder RAM-only."):
+            return
+        messagebox.showinfo(APP_NAME, disable_networking())
         self.run_gate()
 
     def _gate_row(self, ok, text):
@@ -1074,7 +1102,7 @@ def home_screen(app):
              bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(8, 16))
     if app.test_mode:
         tk.Label(pad, text="TEST MODE — SYNTHETIC DATA ONLY. ENVIRONMENT CHECKS ARE SKIPPED. "
-                 "OPENING AND SAVING PLAN FILES ARE DISABLED. Enter no real inheritance details.",
+                 "Only marked test files can be opened or saved. Enter no real inheritance details.",
                  font=F_MONO_B, bg="#ffe0dc", fg=FLAG, justify="left", wraplength=680,
                  padx=12, pady=10).pack(fill="x", pady=(0, 14))
     tk.Label(pad, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left", wraplength=680,
@@ -1102,16 +1130,16 @@ def home_screen(app):
                   state=("normal" if enabled else "disabled"), command=cmd).pack(
                       anchor="w", padx=18, pady=(0, 16))
 
-    mode(modes, "Mode · 01 · Open", "Plan file opening disabled" if app.test_mode else "Open a cold storage plan file",
+    mode(modes, "Mode · 01 · Open", "Open a synthetic test file" if app.test_mode else "Open a cold storage plan file",
          "Choose a .csp / .json plan file and enter its passphrase. Owners edit and re-seal. "
          "Family, executors, and counsel get the guided recovery runbook." if not app.test_mode else
-         "Opening files and entering unlock credentials are unavailable in test mode.",
-         "DISABLED IN TEST MODE" if app.test_mode else "OPEN PLAN FILE (.CSP)",
-         lambda: open_file_flow(app), True, enabled=not app.test_mode)
+         "Only marked synthetic test files can be opened in test mode.",
+         "OPEN TEST FILE (.CSP)" if app.test_mode else "OPEN PLAN FILE (.CSP)",
+         lambda: open_file_flow(app), True, enabled=True)
     mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new guide",
          "A short interview fills the guide. You then edit the sheets. "
          "It never asks for a seed or a key." if not app.test_mode else
-         "Explore the questionnaire with synthetic answers. Test mode never opens or saves guide files.",
+         "Explore with invented answers, then save and reopen a marked encrypted test file. Do not enter real details.",
          "START TEST QUESTIONNAIRE" if app.test_mode else "START THE GUIDE",
          lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)), False)
 
@@ -1133,7 +1161,23 @@ def home_screen(app):
 
 def open_file_flow(app):
     if app.test_mode:
-        messagebox.showwarning(APP_NAME, "File opening is disabled in test mode. Use synthetic questionnaire data only.")
+        path = filedialog.askopenfilename(
+            parent=app, title="Open synthetic test guide",
+            filetypes=[("Vault Folio test guide", "*.csp.json *.json"), ("All files", "*.*")])
+        if not path:
+            return
+        password = simpledialog.askstring(APP_NAME, "Enter the synthetic test passphrase:", show="*", parent=app)
+        if password is None:
+            return
+        try:
+            plan = load_synthetic_plan(path, password)
+        except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+            messagebox.showerror(APP_NAME, "Could not open this marked synthetic test guide.", parent=app)
+            return
+        finally:
+            password = None
+        app.opened_format = "VAULTFOLIO/2 · SYNTHETIC TEST"
+        open_choice(app, plan)
         return
     if not environment_is_safe(environment_report(), test_mode=False):
         messagebox.showerror(APP_NAME, "Offline / RAM-session checks failed. Nothing opened.")
@@ -1177,6 +1221,16 @@ def open_file_flow(app):
 
 
 def open_choice(app, plan):
+    is_synthetic_test = (isinstance(plan, dict) and isinstance(plan.get("meta"), dict)
+                         and plan["meta"].get(TEST_MARKER) is True)
+    if is_synthetic_test and not app.test_mode:
+        discard_plan(plan)
+        messagebox.showwarning(APP_NAME, "This is a synthetic test file. Open it only in synthetic test mode.", parent=app)
+        return
+    if app.test_mode and not is_synthetic_test:
+        discard_plan(plan)
+        messagebox.showwarning(APP_NAME, "Test mode opens only marked synthetic test files.", parent=app)
+        return
     try:
         plan = prepare_plan(plan, blank_plan())
     except ValueError as exc:
@@ -2126,18 +2180,21 @@ class Wizard:
     def page_export(self):
         pad = self.page("Encrypt & export the inheritance file")
         if self.app.test_mode:
-            tk.Label(pad, text="TEST MODE — EXPORT DISABLED", font=F_MONO_B,
+            tk.Label(pad, text="TEST MODE — SYNTHETIC ENCRYPTED SAVE ENABLED", font=F_MONO_B,
                      bg="#ffe0dc", fg=FLAG, padx=12, pady=10).pack(anchor="w", fill="x", pady=12)
-            tk.Label(pad, text="This run skips all environment checks. Do not enter real plan "
-                     "details. Opening files, entering unlock credentials, using YubiKeys, and saving are disabled. "
-                     "Close the app to discard synthetic test answers; this is not guaranteed RAM erasure.",
+            tk.Label(pad, text="This run skips environment checks. Use invented answers only. Saving exercises the real "
+                     "VAULTFOLIO/2 encryption and encrypted-file writer, but does not prove a safe operating system. "
+                     "Test files are marked and rejected by normal mode. No YubiKey actions are available here.",
                      font=F_BODY, bg=PAPER, fg=INK, justify="left", wraplength=620).pack(anchor="w", pady=8)
-            return
-        self.note(pad, "Choose any independent unlock methods for this guide. Give a passphrase or enrolled YubiKey "
-                       "to your lawyer if desired. Keep the program, encrypted file, and non-secret discovery instructions "
-                       "where family can find them. Release conditions are instructions, not a software-enforced time lock.")
-        add_export_controls(pad, self.app, self.plan,
-                            lambda: environment_is_safe(environment_report()))
+            tk.Button(pad, text="SAVE SYNTHETIC TEST FILE", font=F_MONO_B, bg=INK, fg=PAPER,
+                      relief="flat", padx=14, pady=8,
+                      command=lambda: save_synthetic_test_flow(self.app, self.plan)).pack(anchor="w", pady=12)
+        else:
+            self.note(pad, "Choose any independent unlock methods for this guide. Give a passphrase or enrolled YubiKey "
+                           "to your lawyer if desired. Keep the program, encrypted file, and non-secret discovery instructions "
+                           "where family can find them. Release conditions are instructions, not a software-enforced time lock.")
+            add_export_controls(pad, self.app, self.plan,
+                                lambda: environment_is_safe(environment_report()))
 
         # --- preview: the pictures the family will see ---------------------
         if self.plan["vaults"]:
@@ -2166,6 +2223,45 @@ class Wizard:
 
 def start_wizard(app, plan):
     Wizard(app, plan)
+
+
+def save_synthetic_test_flow(app, plan):
+    if not messagebox.askokcancel(
+            "Synthetic test file only",
+            "This mode skips all environment checks. Use only invented questionnaire answers and a new test passphrase. "
+            "Never enter or save a real inheritance plan here. Continue?", parent=app):
+        return
+    password = simpledialog.askstring(APP_NAME, "Create a TEST-ONLY passphrase (at least 12 characters). "
+                                      "Do not reuse any real passphrase:", show="*", parent=app)
+    if password is None:
+        return
+    if len(password) < 12:
+        password = None
+        messagebox.showerror(APP_NAME, "The test passphrase must contain at least 12 characters.", parent=app)
+        return
+    confirm = simpledialog.askstring(APP_NAME, "Confirm the TEST-ONLY passphrase:", show="*", parent=app)
+    if confirm is None or confirm != password:
+        password = confirm = None
+        messagebox.showerror(APP_NAME, "The passphrases did not match.", parent=app)
+        return
+    confirm = None
+    path = filedialog.asksaveasfilename(
+        parent=app, title="Save synthetic encrypted test guide", defaultextension=".csp.json",
+        initialfile="synthetic-test-guide.csp.json",
+        filetypes=[("Vault Folio encrypted guide", "*.csp.json"), ("JSON file", "*.json")])
+    if not path:
+        password = None
+        return
+    try:
+        save_synthetic_plan(path, plan, password)
+    except (OSError, ValueError):
+        messagebox.showerror(APP_NAME, "Could not save the encrypted synthetic test file.", parent=app)
+    else:
+        app.dirty = False
+        messagebox.showinfo(APP_NAME, "Encrypted synthetic test file saved. Use OPEN TEST FILE to verify the passphrase "
+                            "and beneficiary view. Normal mode will refuse this marked test file.", parent=app)
+    finally:
+        password = None
 
 
 # --------------------------------------------------------------------------
@@ -2216,7 +2312,8 @@ def main():
         self_test()
         return
     harden_process()  # RAM gate blocks if this cannot be established.
-    test_mode = "--test-only-synthetic-questionnaire" in sys.argv
+    test_mode = any(flag in sys.argv for flag in (
+        "--test-session", "--test-only-synthetic-questionnaire"))
     app = App(test_mode=test_mode)
     app.mainloop()
 
