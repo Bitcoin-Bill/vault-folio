@@ -117,6 +117,45 @@ class ScreenConstructionTests(unittest.TestCase):
         self.vf.show_tree_detail("Key 1", [("Holder", "Ada"), ("Location", "home safe")])
         self.app.update_idletasks()
 
+    def test_diagram_cards_contain_their_text_at_2x(self):
+        """Regression: fixed card heights and the canvas width= phantom-space
+        quirk spilled wrapped text out of its card at other interface scales."""
+        import tkinter as tk
+        import folio_theme as themes
+        free_prefixes = ("PEOPLE", "NUMBERED GUIDE", "unsigned PSBT",
+                         "signed PSBT", "THE AIR GAP", "ONLINE SIDE", "AIR-GAPPED")
+        themes.set_scaling(self.app, 2.0)
+        try:
+            plan = self.plan()
+            drawers = (lambda cv: self.vf.canvas_family_map(cv, plan),
+                       lambda cv: self.vf.canvas_quorum(cv, plan["vaults"][0], 0),
+                       lambda cv: self.vf.canvas_psbt_flow(cv, "QR codes"))
+            for drawer in drawers:
+                cv = tk.Canvas(self.app)
+                drawer(cv)
+                self.app.update_idletasks()
+                rects = [cv.bbox(i) for i in cv.find_all()
+                         if cv.type(i) == "rectangle"]
+                self.assertTrue(rects, "diagram drew no cards")
+                min_top = min(r[1] for r in rects)
+                for i in cv.find_all():
+                    if cv.type(i) != "text":
+                        continue
+                    bb = cv.bbox(i)
+                    if bb[3] <= min_top + 2:
+                        continue  # header band above the first card
+                    text = cv.itemcget(i, "text")
+                    if text.startswith(free_prefixes):
+                        continue  # intentional labels outside cards
+                    self.assertTrue(
+                        any(r[0] <= bb[0] + 2 and r[1] <= bb[1] + 2 and
+                            r[2] >= bb[2] - 2 and r[3] >= bb[3] - 2
+                            for r in rects),
+                        f"text spills its card: {text[:30]!r} bbox={bb}")
+                cv.destroy()
+        finally:
+            themes.set_scaling(self.app, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
