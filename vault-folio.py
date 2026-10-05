@@ -775,7 +775,65 @@ def canvas_quorum(cv, v, vi):
                            font=("Courier", 7), fill="#b3282d")
 
 
-def canvas_psbt_flow(cv, medium):
+def canvas_family_map(cv, plan):
+    """Setup tree plus the people and places recorded for the heirs."""
+    people = plan.get("people") or {}
+    vaults = plan.get("vaults") or [{}]
+    vault = vaults[0]
+    keys = list(vault.get("keys") or [])
+    n = int(vault.get("n") or len(keys) or 1)
+    m = vault.get("m") or ""
+    while len(keys) < n:
+        keys.append({})
+    people_cards = [
+        ("FIRST CONTACT", people.get("executor") or "Not named"),
+        ("INSTRUCTIONS HOLDER", people.get("trustee") or "Not named"),
+        ("HEIR", ", ".join(h.get("name") for h in people.get("heirs") or [] if h.get("name")) or "Not named"),
+        ("LAWYER", ", ".join(row.get("name") or row.get("firm") or "" for row in plan.get("lawyers") or []).strip(", ") or "Not named"),
+    ]
+    key_w, gap, mx = 190, 14, 20
+    width = max(860, mx * 2 + n * key_w + (n - 1) * gap)
+    height = 250 + 110
+    cv.configure(width=width, height=height, bg="#fafaf8", highlightthickness=0)
+    rule = f"{m}-of-{n}" if m and n else (vault.get("setupType") or "setup")
+    cv.create_rectangle(mx, 16, 280, 78, fill="#ffffff", outline="#0a0a0a")
+    cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=("Courier", 8), fill="#6b6b6b")
+    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=("Courier", 11, "bold"))
+    cv.create_text(300, 48, anchor="w", text=str(rule).upper(), font=("Courier", 11, "bold"), fill="#b3282d")
+    for i in range(n):
+        x = mx + i * (key_w + gap)
+        y = 108
+        key = keys[i]
+        cv.create_line(150, 78, x + key_w / 2, y, fill="#c9c7bf")
+        cv.create_rectangle(x, y, x + key_w, y + 108, fill="#ffffff", outline="#0a0a0a")
+        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 8), fill="#6b6b6b")
+        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=("Courier", 10, "bold"))
+        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(key.get("notes") or "Not named", 18), font=("Courier", 8))
+        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(key.get("locations") or "Not recorded", 20), font=("Courier", 8), fill="#2e6b4f")
+    for i, (label, value) in enumerate(people_cards):
+        x = mx + i * 210
+        y = 240
+        cv.create_rectangle(x, y, x + 196, y + 72, fill="#ffffff", outline="#0a0a0a")
+        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=("Courier", 8), fill="#6b6b6b")
+        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=("Courier", 10, "bold"))
+
+
+def heir_steps_for(plan):
+    """Short visual steps from this plan only."""
+    people = plan.get("people") or {}
+    vault = (plan.get("vaults") or [{}])[0]
+    contact = people.get("executor") or "the first contact named in the guide"
+    where = (plan.get("inheritance") or {}).get("letterLocation") or "the place named for the sealed guide"
+    rule = f"{vault.get('m')} of {vault.get('n')}" if vault.get("m") and vault.get("n") else (vault.get("setupType") or "the recorded rule")
+    places = [key.get("locations") for key in vault.get("keys") or [] if key.get("locations")]
+    place = places[0] if places else "the places named on each key"
+    return [
+        ("1", "Read this first", "This guide has no seed and cannot spend bitcoin."),
+        ("2", "Contact " + contact, "Use a route the family already knows."),
+        ("3", "Find the guide", where),
+        ("4", "Follow " + str(rule), "Copies of one key still count as one key."),
+        ("5", "Collect backups from " + place, "Do not gather every secret on one computer."),
+    ]
     w, h, wall = 700, 226, 352
     med = _short(medium or "QR codes / removable media, as recorded in the plan", 40)
     cv.configure(width=w, height=h)
@@ -1275,13 +1333,26 @@ def open_choice(app, plan):
 
 def show_heir(app, plan):
     def draw_diagrams(box, current_plan):
-        """Quorum pictures for the heir journey's 'what exists' step."""
+        tk.Label(box, text="SETUP, KEY PLACES, AND PEOPLE", font=("Courier", 9),
+                 bg="#fafaf8", fg="#6b6b6b").pack(anchor="w", pady=(0, 6))
+        cv = tk.Canvas(box, bg="#fafaf8", highlightthickness=0)
+        canvas_family_map(cv, current_plan)
+        cv.pack(anchor="w", pady=(0, 12))
+        tk.Label(box, text="STEPS FOR THIS GUIDE", font=("Courier", 9),
+                 bg="#fafaf8", fg="#6b6b6b").pack(anchor="w")
+        for number, title, detail in heir_steps_for(current_plan):
+            card = tk.Frame(box, bg="#ffffff", highlightthickness=1, highlightbackground="#c9c7bf")
+            card.pack(fill="x", pady=4)
+            tk.Label(card, text=number + "  " + title, font=("Courier", 11, "bold"),
+                     bg="#ffffff").pack(anchor="w", padx=12, pady=(8, 0))
+            tk.Label(card, text=detail, font=("Helvetica", 12), bg="#ffffff",
+                     wraplength=640, justify="left").pack(anchor="w", padx=12, pady=(0, 8))
         for vi, vault in enumerate(current_plan.get("vaults") or []):
             if not (vault.get("keys") or vault.get("n")):
                 continue
-            cv = tk.Canvas(box, bg="#fafaf8", highlightthickness=0)
-            canvas_quorum(cv, vault, vi)
-            cv.pack(anchor="w", pady=(0, 14))
+            quorum = tk.Canvas(box, bg="#fafaf8", highlightthickness=0)
+            canvas_quorum(quorum, vault, vi)
+            quorum.pack(anchor="w", pady=(8, 14))
     show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams)
 
 

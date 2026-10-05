@@ -148,7 +148,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
         title.configure(text=heading)
         for w in diagram_box.winfo_children():
             w.destroy()
-        if draw_diagrams is not None and heading == 'Understand what exists':
+        if draw_diagrams is not None and heading in ('Start here', 'Understand what exists'):
             draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
         text.configure(state='normal');text.delete('1.0','end');text.insert('1.0',content);text.configure(state='disabled');text.yview_moveto(0)
         previous.configure(state='normal' if index[0] else 'disabled')
