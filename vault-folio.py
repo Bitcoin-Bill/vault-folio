@@ -1441,6 +1441,51 @@ def open_file_flow(app):
         messagebox.showerror(APP_NAME, "Only encrypted Vault Folio JSON plan files can be opened.")
 
 
+def show_full_journal(app, plan):
+    """Read-only view of the saved guide. It does not open the editor."""
+    window = tk.Toplevel(app)
+    window.title("Full journal — read only")
+    window.configure(bg=PAPER)
+    window.geometry("860x700")
+    tk.Label(window, text="FULL JOURNAL · READ ONLY", font=F_MONO_B, bg=PAPER, fg=FLAG).pack(anchor="w", padx=18, pady=(16, 4))
+    tk.Label(window, text="This is the recorded guide. Nothing here changes the sealed file.",
+             font=F_BODY, bg=PAPER, fg=INK, wraplength=780, justify="left").pack(anchor="w", padx=18)
+    box = ScrollFrame(window)
+    box.pack(fill="both", expand=True, padx=18, pady=12)
+    tk.Label(box.inner, text=build_runbook_text(plan), font=F_BODY, bg=PAPER, fg=INK,
+             justify="left", wraplength=760, anchor="w").pack(anchor="w")
+    tk.Button(window, text="CLOSE JOURNAL", command=window.destroy, font=F_MONO_B,
+              bg=INK, fg=PAPER, relief="flat", padx=12, pady=8).pack(anchor="e", padx=18, pady=(0, 16))
+
+
+def confirm_alter_saved_guide(app, plan):
+    """A saved guide is not an open draft. Changing it needs a warning and the passphrase."""
+    if not messagebox.askokcancel(
+            APP_NAME,
+            "This is a confirmed sealed guide.\n\n"
+            "Viewing and adding heir notes does not change the recorded setup. "
+            "Altering it can change what the family later relies on.\n\n"
+            "Continue only if you mean to change the recorded guide. "
+            "You will need this guide's passphrase. Nothing is changed until you save a new encrypted copy.",
+            parent=app):
+        return
+    path = getattr(app, "guide_path", None)
+    if path and not app.test_mode:
+        pw = simpledialog.askstring(APP_NAME, "Enter this guide's passphrase to unlock changes:", show="*", parent=app)
+        if not pw:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                current = json.load(handle)
+            decrypt_plan(current, pw)
+        except (OSError, ValueError, TypeError, UnicodeError):
+            messagebox.showerror(APP_NAME, "That passphrase does not open this file. The guide was not opened for changes.", parent=app)
+            return
+        finally:
+            pw = None
+    start_wizard(app, plan)
+
+
 def save_guide_notes(app, plan):
     """Persist beneficiary notes/checklist into the file the guide came from.
 
@@ -1506,12 +1551,12 @@ def open_choice(app, plan):
     tk.Label(dlg, text="Choose how to open this guide. Viewing makes no changes; editing saves a new encrypted copy.", font=F_BODY, bg=PAPER, fg=BODY_TEXT).pack(padx=24, anchor="w")
     row = tk.Frame(dlg, bg=PAPER)
     row.pack(padx=24, pady=18, anchor="w")
-    tk.Button(row, text="PLAN EDITOR — UPDATE & RE-ENCRYPT", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
+    tk.Button(row, text="HEIR VIEW", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
               padx=12, pady=8, cursor="hand2",
-              command=lambda: (dlg.destroy(), start_wizard(app, plan))).pack(side="left", padx=(0, 8))
-    tk.Button(row, text="BENEFICIARY VIEW — STEP-BY-STEP GUIDE", font=F_MONO_B, bg=PAPER, fg=INK, relief="flat",
-              highlightthickness=1, highlightbackground=INK, padx=12, pady=8, cursor="hand2",
-              command=lambda: (dlg.destroy(), show_heir(app, plan))).pack(side="left")
+              command=lambda: (dlg.destroy(), show_heir(app, plan))).pack(side="left", padx=(0, 8))
+    tk.Button(row, text="EDITOR VIEW", font=F_MONO_B, bg=PAPER, fg=FLAG, relief="flat",
+              highlightthickness=1, highlightbackground=FLAG, padx=12, pady=8, cursor="hand2",
+              command=lambda: (dlg.destroy(), confirm_alter_saved_guide(app, plan))).pack(side="left")
 
 
 def show_heir(app, plan):
@@ -1532,7 +1577,7 @@ def show_heir(app, plan):
         family_map.columnconfigure(0, weight=1)
     show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams,
                      save_plan=lambda current: save_guide_notes(app, current),
-                     edit_plan=lambda: start_wizard(app, plan))
+                     edit_plan=lambda: confirm_alter_saved_guide(app, plan))
 
 
 # --------------------------------------------------------------------------
@@ -1585,7 +1630,12 @@ class Wizard:
         self.vars = {}
         self.vault_intake = None
         app.clear()
-        app.header(status="PLAN EDITOR · SAVE ENCRYPTED TO KEEP CHANGES")
+        app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
+        if getattr(app, "guide_path", None):
+            tk.Label(app, text="SAVED GUIDE · Editing changes what the family will later rely on. "
+                     "Nothing is written until you save a new encrypted copy.",
+                     font=F_MONO_B, bg="#fff1f2", fg=FLAG, wraplength=980, justify="left",
+                     padx=16, pady=10).pack(fill="x")
 
         shell = tk.Frame(app, bg=PAPER)
         shell.pack(fill="both", expand=True)
@@ -1614,6 +1664,7 @@ class Wizard:
         nav.pack(fill="x")
         self.back_btn = ui.btn_secondary(nav, "← BACK / EXIT", self.back)
         self.back_btn.pack(side="left", padx=8, pady=6)
+        ui.btn_secondary(nav, "HEIR VIEW", lambda: show_heir(self.app, self.plan)).pack(side="left", padx=8, pady=6)
         self.pos_lbl = tk.Label(nav, text="", font=themes.F("Courier", 9), bg=PAPER, fg=HINT)
         self.pos_lbl.pack(side="left", expand=True)
         self.next_btn = ui.btn_primary(nav, "CONTINUE →", self.forward)
