@@ -59,11 +59,11 @@
     ];
     function seedish(v){ const t=(v||"").toLowerCase().replace(/[_-]+/g," "); if(/\b(?:seed\s+(?:phrase|words?)|private\s+key|secret\s+key|xprv|xpub|recovery\s+(?:phrase|words?))\b/.test(t)) return true; const w=t.split(/\s+/).filter(Boolean); return w.length>=12 && w.length<=24 && w.every(x=>/^[a-z]+$/.test(x)); }
     function esc(v){
-      return String(v || "").replace(/[&<>"]/g, function(c){
-        if (c === "&") return "&";
-        if (c === "<") return "<";
-        if (c === ">") return ">";
-        return """;
+      return String(v || "").replace(/[&<>\"]/g, function(c){
+        if (c === "&") return "&amp;";
+        if (c === "<") return "&lt;";
+        if (c === ">") return "&gt;";
+        return "&quot;";
       });
     }
     function help(text){ alert(text+"\n\nDo not enter a seed, key, or private detail."); }
