@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vault Folio — functionality preview</title>
+  <style>
+    :root { --ink:#1c1917; --paper:#f7f4ee; --line:#e4dfd4; --flag:#9f1239; --muted:#57534e; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:18px/1.45 Georgia, serif; }
+    header { background:#fff1f2; color:var(--flag); border-bottom:2px solid var(--flag); padding:16px 22px; position:sticky; top:0; }
+    header strong { display:block; font:700 14px/1.3 ui-monospace, monospace; letter-spacing:.04em; }
+    main { max-width:760px; margin:0 auto; padding:28px 20px 64px; }
+    h1 { font-size:34px; line-height:1.15; margin:0 0 8px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:22px; margin-top:18px; }
+    p, label { font-family: Helvetica, Arial, sans-serif; }
+    .muted { color:var(--muted); }
+    button, input { font:16px/1.3 Helvetica, Arial, sans-serif; }
+    button { border:1px solid var(--ink); background:#fff; border-radius:10px; padding:10px 14px; margin:6px 8px 0 0; cursor:pointer; }
+    button.primary { background:var(--ink); color:#fff; }
+    input[type=text] { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; }
+    .warn { background:#fff1f2; border:1px solid #fecdd3; color:var(--flag); padding:12px 14px; border-radius:12px; font-family:Helvetica, Arial, sans-serif; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>ONLINE PREVIEW — NOT THE REAL APP</strong>
+    This page runs in a browser. Do not enter a seed, a private key, an xpub, a real passphrase, or any private plan. Invented answers only. Nothing here is encrypted or saved.
+  </header>
+  <main>
+    <h1>Vault Folio</h1>
+    <p class="muted">An inheritance guide for heirs. It records how a bitcoin setup is arranged. It does not hold the bitcoin.</p>
+    <div id="app"></div>
+  </main>
+  <script>
+    const state = { step: 0, answers: {} };
+    const questions = [
+      { key: "plan", text: "What should this plan be called?", help: "A family name for the guide, such as House savings. Not a seed.", type: "text" },
+      { key: "owner", text: "Whose bitcoin does this plan describe?", help: "The owner’s name. This app never asks for a key.", type: "text" },
+      { key: "structure", text: "Does spending need one key, or several keys that must agree?", help: "Copies of one backup are still one key. Several independent keys are a multi-key setup.", type: "choice", options: [["single","One key"],["multi","Several keys must agree"],["unsure","I'm not sure"]] },
+      { key: "copies", text: "Where should the family find the sealed guide?", help: "A broad place, such as with the executor. Not a seed location.", type: "text" },
+      { key: "contact", text: "Who should the family contact first?", help: "A person or role. They are not asked for a key.", type: "text" }
+    ];
+    function seedish(value) {
+      const text = (value || "").toLowerCase();
+      if (/seed|private key|xprv|xpub|recovery phrase/.test(text)) return true;
+      const words = text.split(/\s+/).filter(Boolean);
+      return words.length >= 12 && words.length <= 24 && words.every(w => /^[a-z]+$/.test(w));
+    }
+    function render() {
+      const q = questions[state.step];
+      const root = document.getElementById("app");
+      if (!q) {
+        const a = state.answers;
+        root.innerHTML = `<div class="card"><p class="warn">Preview only. This summary is not an encrypted guide and is not saved.</p><h2>Here is the invented guide</h2><p>Plan: ${escapeHtml(a.plan || "Untitled")}</p><p>Owner: ${escapeHtml(a.owner || "Not named")}</p><p>Setup: ${escapeHtml(a.structure || "Not chosen")}</p><p>Guide location: ${escapeHtml(a.copies || "Not named")}</p><p>First contact: ${escapeHtml(a.contact || "Not named")}</p><p>No seed was requested or stored.</p><button class="primary" id="again">Start again</button></div>`;
+        document.getElementById("again").onclick = () => { state.step = 0; state.answers = {}; render(); };
+        return;
+      }
+      const options = (q.options || []).map(([value, label]) => `<button data-value="${value}">${label}</button>`).join("");
+      root.innerHTML = `<div class="card"><p class="muted">Question ${state.step + 1} of ${questions.length}</p><h2>${q.text} <button id="help" title="What this asks">?</button></h2><p class="muted">${q.help}</p>${q.type === "text" ? '<input id="answer" type="text" autocomplete="off">' : options}<div><button id="back">Back</button>${q.type === "text" ? '<button class="primary" id="next">Next</button>' : ""}</div></div>`;
+      document.getElementById("help").onclick = () => alert(q.help + "\n\nDo not enter a seed, key, or real private detail.");
+      document.getElementById("back").onclick = () => { state.step = Math.max(0, state.step - 1); render(); };
+      if (q.type === "text") {
+        document.getElementById("next").onclick = () => accept(document.getElementById("answer").value);
+      } else {
+        root.querySelectorAll("[data-value]").forEach(button => button.onclick = () => accept(button.dataset.value));
+      }
+    }
+    function accept(value) {
+      if (seedish(value)) { alert("This preview refuses seed-like text. Use an invented label."); return; }
+      state.answers[questions[state.step].key] = value.trim();
+      state.step += 1;
+      render();
+    }
+    function escapeHtml(value) { return String(value).replace(/[&<>"]/g, c => ({'&':'&','<':'<','>':'>','"':'"'}[c])); }
+    render();
+  </script>
+</body>
+</html>
