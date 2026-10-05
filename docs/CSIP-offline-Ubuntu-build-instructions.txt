@@ -1,0 +1,26 @@
+Task: Make the current CSIP build install and run on my permanently offline Ubuntu laptop.
+
+Work from the latest CSIP source/build and prepare a complete, self-contained ZIP on the SD card. The laptop cannot connect to Wi-Fi, Ethernet, or any network. Do not tell me to run apt update, apt install, or use pip online.
+
+Current laptop state: I ran ls -la in ~/CSIP-Ubuntu-Offline. The folder contains:
+- START-UBUNTU-OFFLINE.sh
+- START-SYNTHETIC-DEMO.sh
+- CHECK-UBUNTU-REQUIREMENTS.sh
+- UBUNTU-SETUP.md
+- vault-folio.py and its folio_*.py modules
+
+Running the app reports: No module named tkinter. The laptop remains offline.
+
+Important dependency discovery: The Mac workspace has older offline package sets, but they are incomplete or for different operating systems:
+- Ubuntu 26.04 amd64 set: python3.14-tk, libtk8.6, libtcl8.6, libxss1; no cryptography package.
+- Tails/Debian 13 amd64 set: Debian Python 3.13 Tkinter and python3-cryptography; not suitable for Ubuntu unless the laptop is confirmed to run Debian 13.
+- Do not assume either set matches the laptop. The laptop's Ubuntu version, architecture, and Python version still need to be identified. Find a way to collect that information without internet access, such as a short command whose output I can read or photograph.
+
+What I need you to do:
+1. Inspect the latest CSIP source and the ZIP currently on the SD card. Preserve existing local changes.
+2. Determine exactly which OS/Python/dependencies the Ubuntu build needs, including Tkinter and cryptography, and any required package dependencies.
+3. Assemble a self-contained offline package for the laptop's actual Ubuntu release and architecture. Include an installer/launcher, all needed packages, checksum verification, and clear instructions. If you cannot confirm the laptop's OS details, first give me one short command to run offline and wait for its result—do not guess package compatibility.
+4. Put the completed ZIP in a clearly named folder on the mounted SD card, verify its contents and checksum, and tell me the exact path and laptop commands.
+5. Keep the laptop permanently offline. Do not weaken CSIP protections or alter the app's security behavior to get around missing dependencies.
+
+Be direct and verify the final artifact itself. The previous bundle omitted the dependency that caused the current Tkinter error, so don't claim it is ready until the packaged files and launch path are checked.
