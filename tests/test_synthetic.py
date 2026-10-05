@@ -33,6 +33,13 @@ class SyntheticSaveTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             open_synthetic_envelope(envelope, "not the test phrase")
 
+    def test_deeply_nested_json_is_a_controlled_open_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "nested.json"
+            path.write_text("[" * 1100 + "0" + "]" * 1100, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "could not be opened"):
+                load_synthetic_plan(path, TEST_PASSPHRASE)
+
     def test_unmarked_guide_is_rejected_in_test_mode(self):
         envelope = folio_security.seal(
             SAMPLE_PLAN,

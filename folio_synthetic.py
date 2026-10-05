@@ -53,6 +53,11 @@ def load_synthetic_plan(path, passphrase):
     target = Path(path)
     if target.stat().st_size > MAX_FILE_BYTES:
         raise ValueError("Test file is too large.")
-    with target.open("r", encoding="utf-8") as handle:
-        envelope = json.load(handle)
+    try:
+        with target.open("r", encoding="utf-8") as handle:
+            envelope = json.load(handle)
+    except RecursionError as exc:
+        raise ValueError("This test file could not be opened.") from exc
+    except (json.JSONDecodeError, UnicodeError, OSError) as exc:
+        raise ValueError("This test file could not be opened.") from exc
     return open_synthetic_envelope(envelope, passphrase)

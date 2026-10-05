@@ -1144,7 +1144,7 @@ def open_file_flow(app):
             return
         try:
             plan = load_synthetic_plan(path, password)
-        except (OSError, UnicodeError, ValueError, TypeError):
+        except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
             messagebox.showerror(APP_NAME, "Could not open this marked synthetic test guide.", parent=app)
             return
         finally:
