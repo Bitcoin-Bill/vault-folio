@@ -44,6 +44,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 sys.dont_write_bytecode = True  # RAM discipline: never drop __pycache__ on disk
 
 import folio_ui as ui
+import folio_theme as themes
 from folio_memory import harden_process, memory_report, discard_plan
 from folio_beneficiary import show_beneficiary
 from folio_document import prepare_plan
@@ -902,6 +903,8 @@ def canvas_psbt_flow(cv, medium):
 # GUI — tkinter, no browser engine anywhere
 # --------------------------------------------------------------------------
 INK, PAPER, PAPER2, LINE, FLAG, OK = "#0a0a0a", "#fafaf8", "#f2f1ec", "#c9c7bf", "#b3282d", "#2e6b4f"
+themes.install(globals())
+themes.install(ui.__dict__)
 F_SERIF = ("Georgia", 22)
 F_H2 = ("Georgia", 17)
 F_BODY = ("Helvetica", 11)
@@ -1008,6 +1011,8 @@ class App(tk.Tk):
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
                  font=("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
         tk.Button(bar, text="CLEAR SESSION", command=self.clear_session,
+                  font=("Courier", 8)).pack(side="right", padx=8)
+        tk.Button(bar, text="SETTINGS", command=lambda: themes.open_settings(self),
                   font=("Courier", 8)).pack(side="right", padx=8)
         dot = "●" if ok else "●"
         tk.Label(bar, text=f"{dot}  {status}", font=("Courier", 9),
