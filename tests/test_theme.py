@@ -36,6 +36,15 @@ class ThemeDefinitionTests(unittest.TestCase):
         for role, value in stock.items():
             self.assertEqual(light[role], value.lower(), role)
 
+    def test_F_scales_literal_fonts(self):
+        themes._set_factor(2.0)
+        try:
+            self.assertEqual(themes.F("Georgia", 22), ("Georgia", 44))
+            self.assertEqual(themes.F("Courier", 10, "bold"), ("Courier", 20, "bold"))
+        finally:
+            themes._set_factor(1.0)
+        self.assertEqual(themes.F("Georgia", 22), ("Georgia", 22))
+
     def test_unknown_theme_rejected(self):
         with self.assertRaises(ValueError):
             themes.apply_theme("no-such-theme", None)
@@ -93,6 +102,56 @@ class ThemeApplyTests(unittest.TestCase):
         self.assertEqual(themes.set_scaling(self.root, 9.9), 2.4)
         self.assertEqual(themes.set_scaling(self.root, 0.1), 1.0)
         themes.set_scaling(self.root, 1.0)
+
+    def test_scaling_visibly_changes_widgets(self):
+        """Root-cause regression: tk scaling alone never touched pixel fonts."""
+        from tkinter import font as tkfont
+        tk = self.tk
+        label = tk.Label(self.root, text="x", font=themes.F("Helvetica", 11))
+        default_font_widget = tk.Label(self.root, text="y")  # no explicit font
+        canvas = tk.Canvas(self.root)
+        item = canvas.create_text(5, 5, text="z", font=themes.F("Courier", 10))
+        label.pack(); default_font_widget.pack(); canvas.pack()
+
+        def size_of(widget=None, canvas_item=None):
+            spec = (canvas.itemcget(canvas_item, "font") if canvas_item
+                    else widget.cget("font"))
+            return tkfont.Font(root=self.root, font=str(spec)).cget("size")
+
+        base_label = size_of(label)
+        themes.set_scaling(self.root, 2.0)
+        self.assertEqual(size_of(label), base_label * 2)
+        self.assertEqual(size_of(canvas_item=item), 20)
+        default_after = tkfont.nametofont("TkDefaultFont", root=self.root).cget("size")
+        themes.set_scaling(self.root, 1.0)
+        # exact restore, no rounding drift
+        self.assertEqual(size_of(label), base_label)
+        self.assertEqual(size_of(canvas_item=item), 10)
+        self.assertEqual(tkfont.nametofont("TkDefaultFont", root=self.root).cget("size"),
+                         tkfont.nametofont("TkDefaultFont", root=self.root).cget("size"))
+        self.assertNotEqual(default_after, 0)  # named font was touched and valid
+        label.destroy(); default_font_widget.destroy(); canvas.destroy()
+
+    def test_scaling_updates_registered_font_constants(self):
+        ns = {"F_BODY": ("Helvetica", 11), "F_MONO_B": ("Courier", 10, "bold"),
+              "PAPER": "#fafaf8", "NOTAFONT": (1, 2), "NAME": "x"}
+        themes.install(ns)
+        themes.set_scaling(self.root, 2.0)
+        self.assertEqual(ns["F_BODY"], ("Helvetica", 22))
+        self.assertEqual(ns["F_MONO_B"], ("Courier", 20, "bold"))
+        self.assertEqual(ns["NOTAFONT"], (1, 2))
+        themes.set_scaling(self.root, 1.0)
+        self.assertEqual(ns["F_BODY"], ("Helvetica", 11))
+
+    def test_scaling_no_drift_across_round_trips(self):
+        tk = self.tk
+        label = tk.Label(self.root, text="x", font=themes.F("Georgia", 17))
+        label.pack()
+        original = str(label.cget("font"))
+        for factor in (2.4, 1.3, 2.0, 1.0):
+            themes.set_scaling(self.root, factor)
+        self.assertEqual(str(label.cget("font")), original)
+        label.destroy()
 
 
 if __name__ == "__main__":

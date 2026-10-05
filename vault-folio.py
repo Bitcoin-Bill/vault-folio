@@ -743,16 +743,16 @@ def canvas_quorum(cv, v, vi):
     cv.configure(width=w, height=h)
     title = f"VAULT {vi + 1}" + (f" — {v.get('name')}" if v.get("name") else "")
     cv.create_text(mx, 24, anchor="w", text=_short(title, 46),
-                   font=("Courier", 10, "bold"), fill=INK)
+                   font=themes.F("Courier", 10, "bold"), fill=INK)
     is_single = v.get("setupType") == "single" or (m == 1 and n == 1)
     q = "SINGLE SIGNATURE" if is_single else (f"{m}-OF-{n} MULTISIG" if m else f"{n} KEYS")
-    cv.create_text(w - mx, 24, anchor="e", text=q, font=("Courier", 9, "bold"), fill=FLAG)
+    cv.create_text(w - mx, 24, anchor="e", text=q, font=themes.F("Courier", 9, "bold"), fill=FLAG)
     if is_single:
         caption = "ONE SIGNING KEY AUTHORIZES A SPEND; COPIES ARE BACKUPS, NOT EXTRA KEYS"
     else:
         caption = f"ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE" if m else "KEY DETAILS TO BE CONFIRMED"
     if is_single or m:
-        cv.create_text(w / 2, 46, text=caption, font=("Courier", 7), fill=DIM)
+        cv.create_text(w / 2, 46, text=caption, font=themes.F("Courier", 7), fill=DIM)
         cv.create_line(mx, 53, w - mx, 53, fill=INK)
     for i in range(n):
         r, c = divmod(i, per_row)
@@ -762,18 +762,18 @@ def canvas_quorum(cv, v, vi):
         documented = any(k.get(f) for f in ("label", "device", "locations"))
         cv.create_rectangle(x, y, x + bw, y + bh, fill=WHITE, outline=INK,
                             dash=() if documented else (4, 3))
-        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 7), fill=HINT)
+        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=themes.F("Courier", 7), fill=HINT)
         cv.create_text(x + 10, y + 37, anchor="w", text=_short(k.get("label") or "(undocumented)", 18),
-                       font=("Courier", 9, "bold"), fill=INK)
+                       font=themes.F("Courier", 9, "bold"), fill=INK)
         if k.get("device"):
             cv.create_text(x + 10, y + 55, anchor="w", text="signs with: " + _short(k["device"], 18),
-                           font=("Courier", 7), fill=INK_SOFT)
+                           font=themes.F("Courier", 7), fill=INK_SOFT)
         if k.get("locations"):
             cv.create_text(x + 10, y + 71, anchor="w", text="backup: " + _short(k["locations"], 22),
-                           font=("Courier", 7), fill=OK)
+                           font=themes.F("Courier", 7), fill=OK)
         if not documented:
             cv.create_text(x + 10, y + 71, anchor="w", text="document this key in the plan",
-                           font=("Courier", 7), fill=FLAG)
+                           font=themes.F("Courier", 7), fill=FLAG)
 
 
 def canvas_family_map(cv, plan):
@@ -847,10 +847,10 @@ def canvas_family_map(cv, plan):
                  scrollregion=(0, 0, width, height))
     rule = f"{m}-of-{n}" if m and n else (vault.get("setupType") or "setup")
     cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK)
-    cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=("Courier", 8), fill=HINT)
-    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=("Courier", 11, "bold"), fill=INK, tags=("setup",))
+    cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=themes.F("Courier", 8), fill=HINT)
+    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=themes.F("Courier", 11, "bold"), fill=INK, tags=("setup",))
     cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK, tags=("setup",))
-    cv.create_text(300, 48, anchor="w", text=str(rule).upper() + "  · click a card", font=("Courier", 11, "bold"), fill=FLAG)
+    cv.create_text(300, 48, anchor="w", text=str(rule).upper() + "  · click a card", font=themes.F("Courier", 11, "bold"), fill=FLAG)
     cv.tag_bind("setup", "<Button-1>", lambda _e, v=vault: show_tree_detail("This setup", [
         ("Name", v.get("name") or "Unnamed setup"),
         ("Rule", rule),
@@ -865,10 +865,10 @@ def canvas_family_map(cv, plan):
         cv.create_line(150, 78, x + key_w / 2, y, fill=LINE)
         tag = f"key{i}"
         cv.create_rectangle(x, y, x + key_w, y + 108, fill=WHITE, outline=INK, tags=(tag,))
-        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 8), fill=HINT, tags=(tag,))
-        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=("Courier", 10, "bold"), fill=INK, tags=(tag,))
-        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(holder, 18), font=("Courier", 8), tags=(tag,))
-        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(place, 20), font=("Courier", 8), fill=OK, tags=(tag,))
+        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=themes.F("Courier", 8), fill=HINT, tags=(tag,))
+        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=themes.F("Courier", 10, "bold"), fill=INK, tags=(tag,))
+        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(holder, 18), font=themes.F("Courier", 8), tags=(tag,))
+        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(place, 20), font=themes.F("Courier", 8), fill=OK, tags=(tag,))
         cv.tag_bind(tag, "<Button-1>", lambda _e, k=key, n=i, h=holder, p=place: show_tree_detail(f"Key {n + 1}", [
             ("Label", k.get("label") or "Not named"),
             ("Holder", h),
@@ -880,8 +880,8 @@ def canvas_family_map(cv, plan):
         y = 240
         tag = f"person{i}"
         cv.create_rectangle(x, y, x + 196, y + 72, fill=WHITE, outline=INK, tags=(tag,))
-        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=("Courier", 8), fill=HINT, tags=(tag,))
-        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=("Courier", 10, "bold"), fill=INK, tags=(tag,))
+        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=themes.F("Courier", 8), fill=HINT, tags=(tag,))
+        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=themes.F("Courier", 10, "bold"), fill=INK, tags=(tag,))
         cv.tag_bind(tag, "<Button-1>", lambda _e, title=label, who=value: show_tree_detail(title, [("Name", who)]))
     cv.tag_bind("setup", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
     cv.bind("<Button-1>", lambda _e: cv.configure(cursor="hand2"))
@@ -917,11 +917,11 @@ def show_tree_detail(title, rows):
     window = tk.Toplevel()
     window.title(title)
     window.configure(bg=PAPER)
-    tk.Label(window, text=title, font=("Georgia", 18), bg=PAPER, fg=INK).pack(anchor="w", padx=18, pady=(16, 8))
+    tk.Label(window, text=title, font=themes.F("Georgia", 18), bg=PAPER, fg=INK).pack(anchor="w", padx=18, pady=(16, 8))
     for label, value in rows:
-        tk.Label(window, text=label, font=("Courier", 9), fg=HINT, bg=PAPER).pack(anchor="w", padx=18)
-        tk.Label(window, text=value, font=("Helvetica", 13), bg=PAPER, fg=INK, wraplength=420, justify="left").pack(anchor="w", padx=18, pady=(0, 8))
-    tk.Label(window, text="This is a location and role note. It is not a seed.", font=("Courier", 9),
+        tk.Label(window, text=label, font=themes.F("Courier", 9), fg=HINT, bg=PAPER).pack(anchor="w", padx=18)
+        tk.Label(window, text=value, font=themes.F("Helvetica", 13), bg=PAPER, fg=INK, wraplength=420, justify="left").pack(anchor="w", padx=18, pady=(0, 8))
+    tk.Label(window, text="This is a location and role note. It is not a seed.", font=themes.F("Courier", 9),
              fg=FLAG, bg=PAPER).pack(anchor="w", padx=18, pady=(4, 16))
 
 
@@ -930,19 +930,19 @@ def canvas_psbt_flow(cv, medium):
     med = _short(medium or "QR codes / removable media, as recorded in the plan", 40)
     cv.configure(width=w, height=h)
     cv.create_text(24, 22, anchor="w", text="ONLINE SIDE — the everyday machine",
-                   font=("Courier", 8), fill=HINT)
+                   font=themes.F("Courier", 8), fill=HINT)
     cv.create_text(w - 24, 22, anchor="e", text="AIR-GAPPED SIDE — never touches a network",
-                   font=("Courier", 8), fill=HINT)
+                   font=themes.F("Courier", 8), fill=HINT)
     cv.create_line(wall, 12, wall, h - 34, fill=FLAG, width=2, dash=(6, 5))
     cv.create_text(wall, h - 16, text="THE AIR GAP — only this crosses: " + med,
-                   font=("Courier", 7), fill=FLAG)
+                   font=themes.F("Courier", 7), fill=FLAG)
 
     def box(x, y, bw, bh, title, subs):
         cv.create_rectangle(x, y, x + bw, y + bh, fill=WHITE, outline=INK)
-        cv.create_text(x + 12, y + 24, anchor="w", text=title, font=("Courier", 8, "bold"), fill=INK)
+        cv.create_text(x + 12, y + 24, anchor="w", text=title, font=themes.F("Courier", 8, "bold"), fill=INK)
         ty = y + 42
         for line in subs:
-            cv.create_text(x + 12, ty, anchor="w", text=line, font=("Courier", 7), fill=INK_SOFT)
+            cv.create_text(x + 12, ty, anchor="w", text=line, font=themes.F("Courier", 7), fill=INK_SOFT)
             ty += 13
 
     box(24, 44, 252, 74, "1 · WATCH-ONLY COORDINATOR",
@@ -952,22 +952,22 @@ def canvas_psbt_flow(cv, medium):
     box(24, 140, 252, 60, "4 · FINALIZE & BROADCAST",
         ["The signed PSBT returns here and is sent", "to the Bitcoin network."])
     cv.create_line(276, 81, 418, 81, fill=INK, width=1, arrow="last")
-    cv.create_text(347, 72, text="unsigned PSBT", font=("Courier", 7), fill=INK)
+    cv.create_text(347, 72, text="unsigned PSBT", font=themes.F("Courier", 7), fill=INK)
     cv.create_line(550, 118, 550, 170, 282, 170, fill=INK, width=1, arrow="last")
-    cv.create_text(416, 160, text="signed PSBT — 3", font=("Courier", 7), fill=INK)
+    cv.create_text(416, 160, text="signed PSBT — 3", font=themes.F("Courier", 7), fill=INK)
 
 
 # --------------------------------------------------------------------------
 # GUI — tkinter, no browser engine anywhere
 # --------------------------------------------------------------------------
 INK, PAPER, PAPER2, LINE, FLAG, OK = "#0a0a0a", "#fafaf8", "#f2f1ec", "#c9c7bf", "#b3282d", "#2e6b4f"
-themes.install(globals())
-themes.install(ui.__dict__)
 F_SERIF = ("Georgia", 22)
 F_H2 = ("Georgia", 17)
 F_BODY = ("Helvetica", 11)
 F_MONO = ("Courier", 10)
 F_MONO_B = ("Courier", 10, "bold")
+themes.install(globals())   # after the font constants so scale bases are captured
+themes.install(ui.__dict__)
 
 
 class ScrollFrame(ui.ScrollFrame):
@@ -975,7 +975,7 @@ class ScrollFrame(ui.ScrollFrame):
 
 
 def folio_label(parent, text):
-    return tk.Label(parent, text=text.upper(), font=("Courier", 9), fg=HINT, bg=PAPER, anchor="w")
+    return tk.Label(parent, text=text.upper(), font=themes.F("Courier", 9), fg=HINT, bg=PAPER, anchor="w")
 
 
 class App(tk.Tk):
@@ -1034,18 +1034,18 @@ class App(tk.Tk):
         bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         bar.pack(fill="x")
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
-                 font=("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
+                 font=themes.F("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
         tk.Button(bar, text="CLEAR SESSION", command=self.clear_session,
-                  font=("Courier", 8)).pack(side="right", padx=8)
+                  font=themes.F("Courier", 8)).pack(side="right", padx=8)
         tk.Button(bar, text="SETTINGS", command=lambda: themes.open_settings(self),
-                  font=("Courier", 8)).pack(side="right", padx=8)
+                  font=themes.F("Courier", 8)).pack(side="right", padx=8)
         dot = "●" if ok else "●"
-        tk.Label(bar, text=f"{dot}  {status}", font=("Courier", 9),
+        tk.Label(bar, text=f"{dot}  {status}", font=themes.F("Courier", 9),
                  bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right", padx=16)
         warn = tk.Frame(self, bg=WARN_BG, highlightthickness=1, highlightbackground=FLAG)
         warn.pack(fill="x")
         tk.Label(warn, text="NEVER ENTER A SEED, A SEED PHRASE, OR A PRIVATE KEY. A device name such as SeedSigner is fine.",
-                 font=("Courier", 10), bg=WARN_BG, fg=FLAG, anchor="w",
+                 font=themes.F("Courier", 10), bg=WARN_BG, fg=FLAG, anchor="w",
                  wraplength=1100, justify="left").pack(fill="x", padx=16, pady=6)
 
     # ---- air-gap gate -----------------------------------------------------
@@ -1058,12 +1058,12 @@ class App(tk.Tk):
         f.pack(fill="both", expand=True)
         box = tk.Frame(f, bg="#111111", highlightthickness=1, highlightbackground="#444444")
         box.place(relx=0.5, rely=0.5, anchor="center", width=660)
-        tk.Label(box, text="VAULT FOLIO · AIR-GAP GATE", font=("Courier", 9),
+        tk.Label(box, text="VAULT FOLIO · AIR-GAP GATE", font=themes.F("Courier", 9),
                  fg="#8a8a84", bg="#111111").pack(anchor="w", padx=36, pady=(28, 10))
         tk.Label(box, text="Never enter a seed, a seed phrase, or a private key.",
-                 font=("Courier", 10), fg="#ffb4b4", bg="#111111", wraplength=580,
+                 font=themes.F("Courier", 10), fg="#ffb4b4", bg="#111111", wraplength=580,
                  justify="left").pack(anchor="w", padx=36, pady=(0, 8))
-        tk.Label(box, text="Offline, nonpersistent session required.", font=("Georgia", 20),
+        tk.Label(box, text="Offline, nonpersistent session required.", font=themes.F("Georgia", 20),
                  fg=PAPER, bg="#111111").pack(anchor="w", padx=36)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=580,
                  text="Vault Folio handles the map to your cold storage. The app opens only when the OS reports "
@@ -1073,7 +1073,7 @@ class App(tk.Tk):
             anchor="w", padx=36, pady=(10, 16))
         self.gate_list = tk.Frame(box, bg="#111111")
         self.gate_list.pack(fill="x", padx=36)
-        tk.Label(box, font=("Helvetica", 9), fg="#8a8a84", bg="#111111", justify="left", wraplength=580,
+        tk.Label(box, font=themes.F("Helvetica", 9), fg="#8a8a84", bg="#111111", justify="left", wraplength=580,
                  text="A route can remain after the Wi-Fi card is removed. This screen can turn networking off and check again. "
                       "It cannot remove Bluetooth hardware or put an installed home folder in RAM.").pack(
             anchor="w", padx=36, pady=(14, 6))
@@ -1175,7 +1175,7 @@ class LockOverlay(tk.Toplevel):
         self.grab_set()
         box = tk.Frame(self, bg="#111111", highlightthickness=1, highlightbackground="#444444")
         box.place(relx=0.5, rely=0.5, anchor="center", width=560)
-        tk.Label(box, text="SESSION LOCKED", font=("Courier", 9), fg="#8a8a84",
+        tk.Label(box, text="SESSION LOCKED", font=themes.F("Courier", 9), fg="#8a8a84",
                  bg="#111111").pack(anchor="w", padx=32, pady=(24, 8))
         tk.Label(box, text="Unsafe environment detected.", font=F_H2, fg=PAPER, bg="#111111").pack(anchor="w", padx=32)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=490,
@@ -1232,7 +1232,7 @@ def home_screen(app):
     pad.pack(fill="both", expand=True, padx=56, pady=32)
 
     folio_label(pad, "Vault Folio · Cold storage inheritance guide").pack(anchor="w")
-    tk.Label(pad, text="The plan is the part that has to survive you.", font=("Georgia", 26),
+    tk.Label(pad, text="The plan is the part that has to survive you.", font=themes.F("Georgia", 26),
              bg=PAPER, fg=INK, justify="left", wraplength=820).pack(anchor="w", pady=(8, 18))
     if app.test_mode:
         tk.Label(pad, text="TEST MODE — SYNTHETIC DATA ONLY. ENVIRONMENT CHECKS ARE SKIPPED. "
@@ -1374,7 +1374,7 @@ def open_choice(app, plan):
 
 def show_heir(app, plan):
     def draw_diagrams(box, current_plan):
-        tk.Label(box, text="SETUP, KEY PLACES, AND PEOPLE", font=("Courier", 9),
+        tk.Label(box, text="SETUP, KEY PLACES, AND PEOPLE", font=themes.F("Courier", 9),
                  bg=PAPER, fg=HINT).pack(anchor="w", pady=(0, 6))
         family_map = tk.Frame(box, bg=PAPER)
         family_map.pack(fill="x", pady=(0, 12))
@@ -1384,14 +1384,14 @@ def show_heir(app, plan):
         canvas_family_map(cv, current_plan)
         cv.pack(fill="x", expand=True)
         family_xscroll.pack(fill="x")
-        tk.Label(box, text="STEPS FOR THIS GUIDE", font=("Courier", 9),
+        tk.Label(box, text="STEPS FOR THIS GUIDE", font=themes.F("Courier", 9),
                  bg=PAPER, fg=HINT).pack(anchor="w")
         for number, title, detail in heir_steps_for(current_plan):
             card = tk.Frame(box, bg=WHITE, highlightthickness=1, highlightbackground=LINE)
             card.pack(fill="x", pady=4)
-            tk.Label(card, text=number + "  " + title, font=("Courier", 11, "bold"),
+            tk.Label(card, text=number + "  " + title, font=themes.F("Courier", 11, "bold"),
                      bg=WHITE).pack(anchor="w", padx=12, pady=(8, 0))
-            tk.Label(card, text=detail, font=("Helvetica", 12), bg=WHITE,
+            tk.Label(card, text=detail, font=themes.F("Helvetica", 12), bg=WHITE,
                      wraplength=640, justify="left").pack(anchor="w", padx=12, pady=(0, 8))
         for vi, vault in enumerate(current_plan.get("vaults") or []):
             if not (vault.get("keys") or vault.get("n")):
@@ -1464,7 +1464,7 @@ class Wizard:
         self.sidebar.canvas.configure(width=225, bg=PAPER2)
         self.sidebar.inner.configure(bg=PAPER2)
         for i, (_, title) in enumerate(STEP_DEFS):
-            b = tk.Button(self.sidebar.inner, text=f"{i + 1:02d}  {title}", font=("Courier", 9),
+            b = tk.Button(self.sidebar.inner, text=f"{i + 1:02d}  {title}", font=themes.F("Courier", 9),
                           anchor="w", justify="left", wraplength=205,
                           relief="flat", padx=14, pady=8, cursor="hand2", bg=PAPER2, fg=HINT,
                           activebackground=INK, activeforeground=PAPER,
@@ -1481,7 +1481,7 @@ class Wizard:
         nav.pack(fill="x")
         self.back_btn = ui.btn_secondary(nav, "← BACK / EXIT", self.back)
         self.back_btn.pack(side="left", padx=8, pady=6)
-        self.pos_lbl = tk.Label(nav, text="", font=("Courier", 9), bg=PAPER, fg=HINT)
+        self.pos_lbl = tk.Label(nav, text="", font=themes.F("Courier", 9), bg=PAPER, fg=HINT)
         self.pos_lbl.pack(side="left", expand=True)
         self.next_btn = ui.btn_primary(nav, "CONTINUE →", self.forward)
         self.next_btn.pack(side="right", padx=8, pady=6)
@@ -1533,10 +1533,10 @@ class Wizard:
 
     # ---- form helpers -----------------------------------------------------
     def _label(self, parent, text, hint=""):
-        tk.Label(parent, text=text.upper(), font=("Courier", 9), fg=BODY_TEXT, bg=PAPER,
+        tk.Label(parent, text=text.upper(), font=themes.F("Courier", 9), fg=BODY_TEXT, bg=PAPER,
                  anchor="w").pack(anchor="w", pady=(12, 2))
         tk.Label(parent, text=hint or "Add a short note only; never enter seeds, private keys, or descriptors.",
-                 font=("Helvetica", 9), fg=HINT, bg=PAPER,
+                 font=themes.F("Helvetica", 9), fg=HINT, bg=PAPER,
                  anchor="w", justify="left", wraplength=720).pack(anchor="w", pady=(0, 3))
 
     def entry(self, parent, label, path, hint=""):
@@ -1585,7 +1585,7 @@ class Wizard:
                     lst.remove(val)
                 setp(self.plan, path, lst)
                 self.mark_dirty()
-            tk.Checkbutton(parent, text=lab, variable=v, font=("Helvetica", 10), bg=PAPER, fg=INK,
+            tk.Checkbutton(parent, text=lab, variable=v, font=themes.F("Helvetica", 10), bg=PAPER, fg=INK,
                            activebackground=PAPER, selectcolor=WHITE, anchor="w", justify="left",
                            wraplength=620, command=toggle).pack(anchor="w")
 
@@ -1611,7 +1611,7 @@ class Wizard:
         tk.Frame(pad, bg=LINE, height=1).pack(fill="x", pady=14)
         tk.Label(pad,
                  text="STRUCTURE AND STORAGE LOCATIONS ONLY — never enter seed words, private keys, seed passphrases, xpubs, wallet descriptors, or full signing plans.",
-                 font=("Helvetica", 9, "bold"), fg=FLAG, bg=PAPER, justify="left",
+                 font=themes.F("Helvetica", 9, "bold"), fg=FLAG, bg=PAPER, justify="left",
                  wraplength=640, anchor="w").pack(anchor="w", pady=(0, 10))
         return pad
 
@@ -1619,7 +1619,7 @@ class Wizard:
         fr = tk.Frame(parent, bg=PAPER2, highlightthickness=2,
                       highlightbackground=(FLAG if warn else INK))
         fr.pack(fill="x", pady=10)
-        tk.Label(fr, text=text, font=("Helvetica", 9), bg=PAPER2, fg=BODY_TEXT, justify="left",
+        tk.Label(fr, text=text, font=themes.F("Helvetica", 9), bg=PAPER2, fg=BODY_TEXT, justify="left",
                  wraplength=600).pack(anchor="w", padx=12, pady=10)
 
     def render(self):
@@ -1654,7 +1654,7 @@ class Wizard:
             "Clear the session and fully shut down when finished. Neither action guarantees secure RAM erasure.",
         ]
         for h in hygiene:
-            tk.Label(pad, text="·  " + h, font=("Helvetica", 9), bg=PAPER, fg=BODY_TEXT,
+            tk.Label(pad, text="·  " + h, font=themes.F("Helvetica", 9), bg=PAPER, fg=BODY_TEXT,
                      anchor="w", wraplength=640, justify="left").pack(anchor="w", pady=2)
 
     # ---- folio 01 ---------------------------------------------------------
@@ -1696,20 +1696,20 @@ class Wizard:
             inner.pack(fill="x", padx=10, pady=8)
 
             def row(lbl, key, opts=None, hint=""):
-                tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=WHITE, fg=HINT,
+                tk.Label(inner, text=lbl.upper(), font=themes.F("Courier", 8), bg=WHITE, fg=HINT,
                          anchor="w").pack(anchor="w")
                 tk.Label(inner, text=hint or "Use a short note; never enter seeds or private keys.",
-                         font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w",
+                         font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w",
                          wraplength=700, justify="left").pack(anchor="w")
                 if opts:
                     v = tk.StringVar(value=h.get(key, ""))
-                    cb = ttk.Combobox(inner, textvariable=v, values=opts, state="readonly", font=("Helvetica", 10))
+                    cb = ttk.Combobox(inner, textvariable=v, values=opts, state="readonly", font=themes.F("Helvetica", 10))
                     cb.pack(fill="x")
                     cb.bind("<<ComboboxSelected>>", lambda *_: (h.__setitem__(key, v.get()), self.mark_dirty()))
                 else:
                     v = tk.StringVar(value=h.get(key, ""))
                     v.trace_add("write", lambda *_: (h.__setitem__(key, v.get()), self.mark_dirty()))
-                    tk.Entry(inner, textvariable=v, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+                    tk.Entry(inner, textvariable=v, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
 
             row("Name", "name")
             row("Relationship", "relation")
@@ -1718,7 +1718,7 @@ class Wizard:
                 ["No", "Yes — intentional co-signer", "Yes — inheritance key, not usable yet"],
                 hint="The default answer should be No. An heir holding a live key now can be targeted or coerced.")
             row("How they are reached / found", "contact")
-            tk.Button(fr, text="REMOVE", font=("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
+            tk.Button(fr, text="REMOVE", font=themes.F("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
                       cursor="hand2", command=lambda i=i: self.del_heir(i)).pack(anchor="e", padx=10, pady=(0, 8))
 
     def add_heir(self):
@@ -1765,10 +1765,10 @@ class Wizard:
                 ui.btn_danger(header, "REMOVE", remove, side="right")
                 fields = record_fields(section, record)
                 for key, label, options in fields:
-                    tk.Label(frame, text=label, font=("Helvetica", 9), fg=BODY_TEXT, bg=WHITE,
+                    tk.Label(frame, text=label, font=themes.F("Helvetica", 9), fg=BODY_TEXT, bg=WHITE,
                              anchor="w", wraplength=700).pack(anchor="w", padx=12, pady=(6, 0))
                     tk.Label(frame, text="Use a short, recognizable note; never enter a seed or private key.",
-                             font=("Helvetica", 8), fg=HINT, bg=WHITE,
+                             font=themes.F("Helvetica", 8), fg=HINT, bg=WHITE,
                              anchor="w", wraplength=700, justify="left").pack(anchor="w", padx=12)
                     value = tk.StringVar(value=record.get(key, ""))
                     def update(*_, row=record, name=key, var=value):
@@ -1935,7 +1935,7 @@ class Wizard:
             tk.Label(summary, text=line, font=F_BODY, bg=WHITE, fg=INK,
                      anchor="w", justify="left", wraplength=620).pack(anchor="w", padx=12, pady=3)
         tk.Label(pad, text="DRAFT FOLIO BUILDS IN MEMORY AS YOU ANSWER · NOTHING IS SAVED YET",
-                 font=("Courier", 8), bg=PAPER, fg=HINT).pack(anchor="w", pady=(24, 0))
+                 font=themes.F("Courier", 8), bg=PAPER, fg=HINT).pack(anchor="w", pady=(24, 0))
 
     def advance_vault_intake(self):
         questions = self.vault_intake_questions()
@@ -2047,21 +2047,21 @@ class Wizard:
 
         def row(lbl, key, opts=None, hint="", obj=None):
             obj = obj if obj is not None else v
-            tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=WHITE, fg=HINT,
+            tk.Label(inner, text=lbl.upper(), font=themes.F("Courier", 8), bg=WHITE, fg=HINT,
                      anchor="w").pack(anchor="w", pady=(8, 0))
             tk.Label(inner, text=hint or "Use a short note; never enter seeds, keys, or descriptors.",
-                     font=("Helvetica", 8), bg=WHITE, fg=HINT,
+                     font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT,
                      anchor="w", wraplength=700, justify="left").pack(anchor="w")
             if opts:
                 var = tk.StringVar(value=obj.get(key, ""))
-                cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=("Helvetica", 10))
+                cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=themes.F("Helvetica", 10))
                 cb.pack(fill="x")
                 cb.bind("<<ComboboxSelected>>", lambda *_: (obj.__setitem__(key, var.get()),
                                                             self.mark_dirty(), self._maybe_redraw_vault(key)))
             else:
                 var = tk.StringVar(value=str(obj.get(key, "")))
                 var.trace_add("write", lambda *_: (obj.__setitem__(key, var.get()), self.mark_dirty()))
-                tk.Entry(inner, textvariable=var, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+                tk.Entry(inner, textvariable=var, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
 
         row("Vault name", "name")
         row("Preset source / guide revision (optional)", "profileSource")
@@ -2071,49 +2071,49 @@ class Wizard:
             "larger no-timelock deep vault beats one script trying to do both.")
 
         qrow = tk.Frame(inner, bg=WHITE)
-        tk.Label(inner, text="QUORUM  (M of N)", font=("Courier", 8), bg=WHITE, fg=HINT,
+        tk.Label(inner, text="QUORUM  (M of N)", font=themes.F("Courier", 8), bg=WHITE, fg=HINT,
                  anchor="w").pack(anchor="w", pady=(8, 0))
         tk.Label(inner, text="M is the required signer count; N is the total signer count.",
-                 font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w").pack(anchor="w")
+                 font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w").pack(anchor="w")
         qrow.pack(fill="x")
         vm = tk.StringVar(value=str(v.get("m", "")))
         vn = tk.StringVar(value=str(v.get("n", "")))
         vm.trace_add("write", lambda *_: (v.__setitem__("m", int(vm.get()) if vm.get().isdigit() else ""), self.mark_dirty()))
         vn.trace_add("write", lambda *_: (v.__setitem__("n", int(vn.get()) if vn.get().isdigit() else ""), self.mark_dirty()))
-        tk.Entry(qrow, textvariable=vm, width=8, font=("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
+        tk.Entry(qrow, textvariable=vm, width=8, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
         tk.Label(qrow, text=" OF ", font=F_MONO, bg=WHITE).pack(side="left")
-        tk.Entry(qrow, textvariable=vn, width=8, font=("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
+        tk.Entry(qrow, textvariable=vn, width=8, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
         tk.Label(inner, text="2-of-3 if a normal family must operate it. 3-of-5 when losing one site must not "
                              "matter. 3-of-7 is the loss-extreme — and a poor inheritance experience.",
-                 font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w", wraplength=580,
+                 font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w", wraplength=580,
                  justify="left").pack(anchor="w")
 
         row("Script type", "script", SCRIPTS)
         row("Coordinator software", "coordinator", COORDS,
             "The coordinator builds transactions and holds the watch-only wallet. It must be replaceable.")
 
-        tk.Label(inner, text="TIMELOCKED RECOVERY PATH?", font=("Courier", 8), bg=WHITE,
+        tk.Label(inner, text="TIMELOCKED RECOVERY PATH?", font=themes.F("Courier", 8), bg=WHITE,
                  fg=HINT, anchor="w").pack(anchor="w", pady=(8, 0))
         tk.Label(inner, text="Record whether this policy has a delayed spending path.",
-                 font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w").pack(anchor="w")
+                 font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w").pack(anchor="w")
         tl = v.get("timelock") or {}
         tlv = tk.StringVar(value=("yes" if tl.get("enabled") else ("no" if v.get("timelock") else "")))
         trow = tk.Frame(inner, bg=WHITE)
         trow.pack(fill="x")
         for val, lab in [("no", "No timelock"), ("yes", "Has timelock")]:
-            tk.Radiobutton(trow, text=lab, value=val, variable=tlv, font=("Helvetica", 10),
+            tk.Radiobutton(trow, text=lab, value=val, variable=tlv, font=themes.F("Helvetica", 10),
                            bg=WHITE, activebackground=WHITE, selectcolor=WHITE,
                            command=lambda: self._set_timelock(v, tlv.get())).pack(side="left", padx=(0, 16))
         if tl.get("enabled"):
-            tk.Label(inner, text="TIMELOCK DETAILS", font=("Courier", 8), bg=WHITE,
+            tk.Label(inner, text="TIMELOCK DETAILS", font=themes.F("Courier", 8), bg=WHITE,
                      fg=HINT, anchor="w").pack(anchor="w", pady=(6, 0))
             tk.Label(inner, text="Prefer relative timelocks (OP_CSV): if the coins stay still, the path matures. "
                                  "Absolute dates mature on schedule, even if spending is active.",
-                     font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w", wraplength=700,
+                     font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w", wraplength=700,
                      justify="left").pack(anchor="w")
             dv = tk.StringVar(value=tl.get("delay", ""))
             dv.trace_add("write", lambda *_: (tl.__setitem__("delay", dv.get()), self.mark_dirty()))
-            tk.Entry(inner, textvariable=dv, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+            tk.Entry(inner, textvariable=dv, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
 
         row("Notes", "notes", hint="Do not mix personal, trust, and business coins under one descriptor. "
                                    "Legal ownership should match who can sign.")
@@ -2155,28 +2155,28 @@ class Wizard:
 
     def draw_key(self, parent, k, ki, vault):
         fr = tk.LabelFrame(parent, text=f"  KEY {ki+1}" + (f" — {k['label']}" if k.get("label") else ""),
-                           font=("Courier", 9), bg=PAPER, fg=INK, relief="solid", bd=1)
+                           font=themes.F("Courier", 9), bg=PAPER, fg=INK, relief="solid", bd=1)
         fr.pack(fill="x", pady=4)
         inner = tk.Frame(fr, bg=PAPER)
         inner.pack(fill="x", padx=10, pady=6)
 
         def row(lbl, key, opts=None, hint=""):
-            tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=PAPER, fg=HINT,
+            tk.Label(inner, text=lbl.upper(), font=themes.F("Courier", 8), bg=PAPER, fg=HINT,
                      anchor="w").pack(anchor="w", pady=(6, 0))
             tk.Label(inner, text=hint or "Describe the role or location only; never enter a seed or key.",
-                     font=("Helvetica", 8), bg=PAPER,
+                     font=themes.F("Helvetica", 8), bg=PAPER,
                      fg=(FLAG if hint.startswith("⚠") else HINT), anchor="w",
                      wraplength=700, justify="left").pack(anchor="w")
             if opts:
                 var = tk.StringVar(value=k.get(key, ""))
-                cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=("Helvetica", 10))
+                cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=themes.F("Helvetica", 10))
                 cb.pack(fill="x")
                 cb.bind("<<ComboboxSelected>>", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty(),
                                                             self._maybe_redraw_vault(key)))
             else:
                 var = tk.StringVar(value=k.get(key, ""))
                 var.trace_add("write", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty()))
-                tk.Entry(inner, textvariable=var, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+                tk.Entry(inner, textvariable=var, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
 
         row("Label", "label", hint="e.g. Key A — home signer")
         dev_hint = ""
@@ -2193,7 +2193,7 @@ class Wizard:
                  "\u201cback up\u201d your way into a spendable set in one building.")
         row("Seed-passphrase backup status (never enter the passphrase)", "passphrase", PASSPHRASE,
             "Choose only where it is stored. Never type seed words or the actual seed passphrase into this tool.")
-        tk.Button(fr, text="REMOVE", font=("Courier", 8), bg=PAPER, fg=FLAG, relief="flat", cursor="hand2",
+        tk.Button(fr, text="REMOVE", font=themes.F("Courier", 8), bg=PAPER, fg=FLAG, relief="flat", cursor="hand2",
                   command=lambda: (vault["keys"].pop(ki), self.mark_dirty(),
                                    self.draw_vaults())).pack(anchor="e", padx=10, pady=(0, 6))
 
@@ -2217,7 +2217,7 @@ class Wizard:
         tk.Label(pad, text="DESCRIPTOR / WALLET-CONFIGURATION COPIES", font=F_MONO_B, bg=PAPER, fg=INK).pack(anchor="w")
         tk.Label(pad, text="For multisignature and timed policies, this copy may be essential to rebuild the wallet. "
                            "For a simple single-key setup, follow its tested restore instructions and record any "
-                           "configuration copies that are actually needed.", font=("Helvetica", 9), fg=HINT,
+                           "configuration copies that are actually needed.", font=themes.F("Helvetica", 9), fg=HINT,
                  bg=PAPER, wraplength=620, justify="left").pack(anchor="w", pady=(2, 8))
         self.dloc_box = tk.Frame(pad, bg=PAPER)
         self.dloc_box.pack(fill="x")
@@ -2243,22 +2243,22 @@ class Wizard:
         for i, d in enumerate(self.plan["backups"]["descriptorLocations"]):
             fr = tk.Frame(self.dloc_box, bg=WHITE, highlightthickness=1, highlightbackground=LINE)
             fr.pack(fill="x", pady=2)
-            tk.Label(fr, text="WHERE", font=("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-            tk.Label(fr, text="Broad place alias or site name.", font=("Helvetica", 8), bg=WHITE,
+            tk.Label(fr, text="WHERE", font=themes.F("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
+            tk.Label(fr, text="Broad place alias or site name.", font=themes.F("Helvetica", 8), bg=WHITE,
                      fg=HINT).grid(row=1, column=0, sticky="w", padx=8)
             v1 = tk.StringVar(value=d.get("where", ""))
             v1.trace_add("write", lambda *_: (d.__setitem__("where", v1.get()), self.mark_dirty()))
-            tk.Entry(fr, textvariable=v1, font=("Helvetica", 10), relief="solid", bd=1).grid(row=2, column=0, sticky="ew", padx=8)
-            tk.Label(fr, text="FORMAT", font=("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=1, sticky="w", padx=8, pady=(6, 0))
-            tk.Label(fr, text="Choose the stored copy type.", font=("Helvetica", 8), bg=WHITE,
+            tk.Entry(fr, textvariable=v1, font=themes.F("Helvetica", 10), relief="solid", bd=1).grid(row=2, column=0, sticky="ew", padx=8)
+            tk.Label(fr, text="FORMAT", font=themes.F("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=1, sticky="w", padx=8, pady=(6, 0))
+            tk.Label(fr, text="Choose the stored copy type.", font=themes.F("Helvetica", 8), bg=WHITE,
                      fg=HINT).grid(row=1, column=1, sticky="w", padx=8)
             v2 = tk.StringVar(value=d.get("format", ""))
-            cb = ttk.Combobox(fr, textvariable=v2, font=("Helvetica", 10), state="readonly",
+            cb = ttk.Combobox(fr, textvariable=v2, font=themes.F("Helvetica", 10), state="readonly",
                               values=["Printed paper", "Plaintext digital file", "Encrypted digital file",
                                       "Wallet descriptor export (BSMS / Core / Sparrow)"], width=26)
             cb.grid(row=2, column=1, sticky="ew", padx=8)
             cb.bind("<<ComboboxSelected>>", lambda *_: (d.__setitem__("format", v2.get()), self.mark_dirty()))
-            tk.Button(fr, text="✕", font=("Courier", 9), bg=WHITE, fg=FLAG, relief="flat", cursor="hand2",
+            tk.Button(fr, text="✕", font=themes.F("Courier", 9), bg=WHITE, fg=FLAG, relief="flat", cursor="hand2",
                       command=lambda i=i: (self.plan["backups"]["descriptorLocations"].pop(i),
                                            self.mark_dirty(), self.draw_dlocs())).grid(row=2, column=2, padx=8)
             fr.columnconfigure(0, weight=3)
@@ -2316,12 +2316,12 @@ class Wizard:
             tk.Frame(fr, bg=colors[f["sev"]], width=5).pack(side="left", fill="y")
             inner = tk.Frame(fr, bg=WHITE)
             inner.pack(side="left", fill="both", expand=True)
-            tk.Label(inner, text=f["sev"].upper(), font=("Courier", 8, "bold"), bg=WHITE,
+            tk.Label(inner, text=f["sev"].upper(), font=themes.F("Courier", 8, "bold"), bg=WHITE,
                      fg=colors[f["sev"]]).pack(anchor="w", padx=12, pady=(8, 0))
-            tk.Label(inner, text=f["title"], font=("Helvetica", 11, "bold"), bg=WHITE, fg=INK,
+            tk.Label(inner, text=f["title"], font=themes.F("Helvetica", 11, "bold"), bg=WHITE, fg=INK,
                      anchor="w", wraplength=600, justify="left").pack(anchor="w", padx=12)
             body = f["detail"] + (("\n→ " + f["fix"]) if f["fix"] else "")
-            tk.Label(inner, text=body, font=("Helvetica", 9), bg=WHITE, fg=BODY_TEXT, anchor="w",
+            tk.Label(inner, text=body, font=themes.F("Helvetica", 9), bg=WHITE, fg=BODY_TEXT, anchor="w",
                      wraplength=600, justify="left").pack(anchor="w", padx=12, pady=(2, 10))
         self.text(pad, "Owner notes (encrypted with the plan)", "ownerNotes")
 
@@ -2367,7 +2367,7 @@ class Wizard:
         tk.Label(pad, text="To update the plan later: reopen this app, open your encrypted file, edit, and "
                            "export a fresh sealed copy. Saving briefly creates an encrypted temporary sibling "
                            "beside the chosen file for atomic replacement.",
-                 font=("Helvetica", 9), fg=HINT, bg=PAPER, justify="left", wraplength=620).pack(anchor="w", pady=14)
+                 font=themes.F("Helvetica", 9), fg=HINT, bg=PAPER, justify="left", wraplength=620).pack(anchor="w", pady=14)
 
 
 def start_wizard(app, plan):

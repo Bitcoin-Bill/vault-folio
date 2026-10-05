@@ -5,6 +5,7 @@ styles so every screen looks and behaves the same. Importing this module has
 no side effects until init_style() is called with a live Tk root.
 """
 import tkinter as tk
+import folio_theme as _theme
 from tkinter import ttk
 
 INK, PAPER, PAPER2, LINE, FLAG, OK = "#0a0a0a", "#fafaf8", "#f2f1ec", "#c9c7bf", "#b3282d", "#2e6b4f"
@@ -12,6 +13,7 @@ WHITE = "#ffffff"
 HINT = "#6b6b6b"
 BODY_TEXT = "#2e2e2e"
 WARN_BG, WARN_TEXT, DIM, INK_SOFT, TEST_BG = "#fff1f2", "#8a6408", "#555555", "#333333", "#ffe0dc"
+F = _theme.F  # scale-aware literal font: ui.F_theme.F("Georgia", 22)
 
 F_H2 = ("Georgia", 22)
 F_H3 = ("Georgia", 16)
@@ -135,7 +137,7 @@ def btn_secondary(parent, text, command, **pack_kw):
 
 
 def btn_danger(parent, text, command, **pack_kw):
-    b = tk.Button(parent, text=text, font=("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
+    b = tk.Button(parent, text=text, font=_theme.F("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
                   padx=8, pady=4, cursor="hand2", activebackground=TEST_BG,
                   activeforeground=FLAG, command=command)
     if pack_kw:
