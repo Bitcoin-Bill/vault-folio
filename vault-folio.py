@@ -28,6 +28,7 @@ Run:      python3 vault-folio.py          (normal; requires verified RAM-backed 
 """
 
 import base64
+import copy
 import glob
 import json
 import math
@@ -1560,6 +1561,11 @@ def open_choice(app, plan):
         messagebox.showerror(APP_NAME, str(exc))
         return
     app.active_plan = plan
+    if getattr(app, "guide_path", None):
+        app.saved_snapshot = copy.deepcopy(plan)
+        plan.setdefault("savedOriginal", copy.deepcopy(plan))
+        plan["savedOriginal"].pop("savedOriginal", None)
+        plan["savedOriginal"].pop("amendments", None)
     dlg = tk.Toplevel(app)
     dlg.configure(bg=PAPER)
     dlg.title(APP_NAME)
@@ -1683,6 +1689,8 @@ class Wizard:
         self.back_btn = ui.btn_secondary(nav, "← BACK / EXIT", self.back)
         self.back_btn.pack(side="left", padx=8, pady=6)
         ui.btn_secondary(nav, "HEIR VIEW", lambda: show_heir(self.app, self.plan)).pack(side="left", padx=8, pady=6)
+        if getattr(self.app, "saved_snapshot", None):
+            ui.btn_secondary(nav, "RESET TO SAVED", self.reset_to_saved).pack(side="left", padx=8, pady=6)
         self.pos_lbl = tk.Label(nav, text="", font=themes.F("Courier", 9), bg=PAPER, fg=HINT)
         self.pos_lbl.pack(side="left", expand=True)
         self.next_btn = ui.btn_primary(nav, "CONTINUE →", self.forward)
@@ -1730,8 +1738,43 @@ class Wizard:
                 return
             home_screen(self.app)
 
+    def reset_to_saved(self):
+        snapshot = getattr(self.app, "saved_snapshot", None)
+        if not snapshot:
+            return
+        if not messagebox.askokcancel(APP_NAME, "Discard additions made in this session and return to the saved guide?", parent=self.app):
+            return
+        self.plan.clear()
+        self.plan.update(copy.deepcopy(snapshot))
+        self.app.active_plan = self.plan
+        self.app.dirty = False
+        self.render()
+
     def mark_dirty(self, *_):
         self.app.dirty = True
+
+    def saved_value(self, path):
+        snapshot = getattr(self.app, "saved_snapshot", None)
+        if not snapshot:
+            return None
+        return getp(snapshot, path)
+
+    def lock_saved(self, widget, path):
+        saved = self.saved_value(path)
+        if saved in (None, ""):
+            return False
+        try:
+            widget.configure(state="disabled")
+        except tk.TclError:
+            pass
+        def warn(_event=None, saved_value=saved):
+            messagebox.showwarning(
+                APP_NAME,
+                "This entry was saved with the guide and is locked.\n\n"
+                "You can add a note below. You cannot replace or delete a saved entry.",
+                parent=self.app)
+        widget.bind("<Button-1>", warn)
+        return True
 
     # ---- form helpers -----------------------------------------------------
     def _label(self, parent, text, hint=""):
@@ -1744,10 +1787,11 @@ class Wizard:
     def entry(self, parent, label, path, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
-        v.trace_add("write", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
         e = tk.Entry(parent, textvariable=v, font=F_BODY, bg=WHITE, fg=INK, relief="solid", bd=1)
         ui.focusable(e)
         e.pack(fill="x", ipady=3)
+        if not self.lock_saved(e, path):
+            v.trace_add("write", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
         e.bind("<Return>", lambda _event: (self.forward(), "break")[1])
         return v
 
@@ -1756,7 +1800,8 @@ class Wizard:
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
         cb = ttk.Combobox(parent, textvariable=v, values=options, state="readonly", font=F_BODY)
         cb.pack(fill="x")
-        cb.bind("<<ComboboxSelected>>", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
+        if not self.lock_saved(cb, path):
+            cb.bind("<<ComboboxSelected>>", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
         return v
 
     def text(self, parent, label, path, hint=""):
@@ -1766,6 +1811,8 @@ class Wizard:
         ui.focusable(t)
         t.insert("1.0", str(getp(self.plan, path) or ""))
         t.pack(fill="x")
+        if self.lock_saved(t, path):
+            return t
 
         def sync(*_):
             setp(self.plan, path, t.get("1.0", "end-1c"))
@@ -1815,6 +1862,23 @@ class Wizard:
                  text="STRUCTURE AND STORAGE LOCATIONS ONLY — never enter seed words, private keys, seed passphrases, xpubs, wallet descriptors, or full signing plans.",
                  font=themes.F("Helvetica", 9, "bold"), fg=FLAG, bg=PAPER, justify="left",
                  wraplength=640, anchor="w").pack(anchor="w", pady=(0, 10))
+        if getattr(self.app, "saved_snapshot", None):
+            tk.Label(pad, text="SAVED ENTRIES ARE LOCKED. Add a note. Reset returns to the saved copy.",
+                     font=F_MONO_B, bg="#fff1f2", fg=FLAG, wraplength=680, justify="left",
+                     padx=12, pady=8).pack(anchor="w", fill="x", pady=(0, 8))
+            note = tk.Text(pad, height=3, font=F_BODY, bg=WHITE, fg=INK, relief="solid", bd=1, wrap="word")
+            note.pack(fill="x")
+            def add_note():
+                text = note.get("1.0", "end-1c").strip()
+                if not text:
+                    return
+                if not messagebox.askokcancel(APP_NAME, "Add this note on top of the saved guide? Saved entries stay unchanged.", parent=self.app):
+                    return
+                self.plan.setdefault("amendments", []).append(text)
+                self.mark_dirty()
+                note.delete("1.0", "end")
+                messagebox.showinfo(APP_NAME, "Note added. Save an encrypted copy to keep it.", parent=self.app)
+            ui.btn_secondary(pad, "ADD NOTE TO SAVED GUIDE", add_note, anchor="w", pady=6)
         return pad
 
     def note(self, parent, text, warn=False):
@@ -1959,8 +2023,12 @@ class Wizard:
                 header = tk.Frame(frame, bg=WHITE)
                 header.pack(fill="x", padx=12, pady=(10, 2))
                 ui.badge(header, f"Record {i + 1}", HINT).pack(side="left")
-                def remove(index=i):
-                    if messagebox.askyesno(APP_NAME, "Remove this record?", parent=self.app):
+                def remove(index=i, section_name=section):
+                    saved_rows = (getattr(self.app, "saved_snapshot", None) or {}).get(section_name) or []
+                    if index < len(saved_rows):
+                        messagebox.showwarning(APP_NAME, "A saved record cannot be deleted. Add a note instead.", parent=self.app)
+                        return
+                    if messagebox.askyesno(APP_NAME, "Remove this unsaved record?", parent=self.app):
                         rows.pop(index)
                         self.mark_dirty()
                         redraw()
