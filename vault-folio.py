@@ -921,6 +921,11 @@ class App(tk.Tk):
         dot = "●" if ok else "●"
         tk.Label(bar, text=f"{dot}  {status}", font=("Courier", 9),
                  bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right", padx=16)
+        warn = tk.Frame(self, bg="#fff1f2", highlightthickness=1, highlightbackground=FLAG)
+        warn.pack(fill="x")
+        tk.Label(warn, text="NEVER ENTER A SEED, A SEED PHRASE, OR A PRIVATE KEY. A device name such as SeedSigner is fine.",
+                 font=("Courier", 10), bg="#fff1f2", fg=FLAG, anchor="w",
+                 wraplength=1100, justify="left").pack(fill="x", padx=16, pady=6)
 
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
@@ -934,6 +939,9 @@ class App(tk.Tk):
         box.place(relx=0.5, rely=0.5, anchor="center", width=660)
         tk.Label(box, text="VAULT FOLIO · AIR-GAP GATE", font=("Courier", 9),
                  fg="#8a8a84", bg="#111111").pack(anchor="w", padx=36, pady=(28, 10))
+        tk.Label(box, text="Never enter a seed, a seed phrase, or a private key.",
+                 font=("Courier", 10), fg="#ffb4b4", bg="#111111", wraplength=580,
+                 justify="left").pack(anchor="w", padx=36, pady=(0, 8))
         tk.Label(box, text="Offline, nonpersistent session required.", font=("Georgia", 20),
                  fg=PAPER, bg="#111111").pack(anchor="w", padx=36)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=580,
