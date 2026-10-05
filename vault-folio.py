@@ -828,8 +828,9 @@ class App(tk.Tk):
     def __init__(self, *, test_mode=False):
         super().__init__()
         self.title(f"{APP_NAME} — Cold Storage Plan & Inheritance File")
-        self.geometry("980x780")
+        self.geometry("1040x760")
         self.configure(bg=PAPER)
+        self.minsize(860, 640)
         self.plan = blank_plan()
         self.active_plan = None
         self.dirty = False
@@ -867,15 +868,13 @@ class App(tk.Tk):
     def header(self, status="OFFLINE / RAM CHECKS PASSED", ok=True):
         if self.test_mode:
             status, ok = "TEST ONLY · NO PLAN FILE OPEN/SAVE · RAM PATH CHECK SKIPPED", False
-        bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
+        bar = tk.Frame(self, bg=PAPER)
         bar.pack(fill="x")
-        tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
-                 font=("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
-        tk.Button(bar, text="CLEAR SESSION", command=self.clear_session,
-                  font=("Courier", 8)).pack(side="right", padx=8)
-        dot = "●" if ok else "●"
-        tk.Label(bar, text=f"{dot}  {status}", font=("Courier", 9),
-                 bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right", padx=16)
+        tk.Frame(self, bg=LINE, height=1).pack(fill="x")
+        tk.Label(bar, text="Vault Folio", font=("Georgia", 16), bg=PAPER, fg=INK).pack(side="left", padx=28, pady=14)
+        tk.Button(bar, text="Clear", command=self.clear_session, font=("Helvetica", 10),
+                  bg=PAPER, fg="#6f6a62", relief="flat").pack(side="right", padx=22)
+        tk.Label(bar, text=status, font=("Helvetica", 10), bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right")
 
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
@@ -889,9 +888,9 @@ class App(tk.Tk):
         f.pack(fill="both", expand=True)
         box = tk.Frame(f, bg="#111111", highlightthickness=1, highlightbackground="#444444")
         box.place(relx=0.5, rely=0.5, anchor="center", width=660)
-        tk.Label(box, text="VAULT FOLIO · AIR-GAP GATE", font=("Courier", 9),
+        tk.Label(box, text="Air-gap check", font=("Helvetica", 10),
                  fg="#8a8a84", bg="#111111").pack(anchor="w", padx=36, pady=(28, 10))
-        tk.Label(box, text="Offline, nonpersistent session required.", font=("Georgia", 20),
+        tk.Label(box, text="This guide stays offline.", font=("Georgia", 24),
                  fg=PAPER, bg="#111111").pack(anchor="w", padx=36)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=580,
                  text="Vault Folio handles the map to your cold storage. The app opens only when the OS reports "
@@ -906,7 +905,7 @@ class App(tk.Tk):
                       + GATE_HINT).pack(anchor="w", padx=36, pady=(14, 6))
         btns = tk.Frame(box, bg="#111111")
         btns.pack(anchor="w", padx=36, pady=(6, 30))
-        tk.Button(btns, text="RE-CHECK ENVIRONMENT", font=F_MONO_B, bg=PAPER, fg=INK,
+        tk.Button(btns, text="Check again", font=("Helvetica", 11), bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2",
                   command=self.run_gate).pack(side="left")
         self.run_gate()
@@ -1046,9 +1045,9 @@ def home_screen(app):
     pad = tk.Frame(inner, bg=PAPER)
     pad.pack(fill="both", expand=True, padx=60, pady=40)
 
-    folio_label(pad, "Registry · Cold storage succession · Local network checks active").pack(anchor="w")
-    tk.Label(pad, text="The plan is the part that\nhas to survive you.", font=("Georgia", 26),
-             bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(8, 16))
+    folio_label(pad, "Inheritance guide").pack(anchor="w")
+    tk.Label(pad, text="The plan is the part\nthat has to survive you.", font=("Georgia", 32),
+             bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(10, 14))
     if app.test_mode:
         tk.Label(pad, text="TEST MODE — SYNTHETIC DATA ONLY. ENVIRONMENT CHECKS ARE SKIPPED. "
                  "OPENING AND SAVING PLAN FILES ARE DISABLED. Enter no real inheritance details.",
@@ -1086,10 +1085,10 @@ def home_screen(app):
          "DISABLED IN TEST MODE" if app.test_mode else "OPEN PLAN FILE (.CSP)",
          lambda: open_file_flow(app), True, enabled=not app.test_mode)
     mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new plan",
-         "A short setup interview fills the plan. You then edit the full layout. "
+         "A short interview fills the guide. You then edit the sheets. "
          "It never asks for a seed or a key." if not app.test_mode else
          "Explore the questionnaire with synthetic answers. Test mode never opens or saves guide files.",
-         "START TEST QUESTIONNAIRE" if app.test_mode else "START SETUP INTERVIEW",
+         "START TEST QUESTIONNAIRE" if app.test_mode else "START THE GUIDE",
          lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)), False)
 
     tk.Label(pad, text="WHAT THE FILE CONTAINS — AND WHAT IT NEVER CONTAINS", font=F_MONO_B,
