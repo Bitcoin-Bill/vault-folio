@@ -109,7 +109,7 @@ def recovery_steps(plan, reveal=False):
 
 
 
-def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_plan=None):
+def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_plan=None, edit_plan=None):
     """Distinct UI: step navigation, no editable questionnaire, no export actions.
 
     draw_diagrams (optional) is called as draw_diagrams(box, plan) on the
@@ -132,11 +132,13 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     step_lbl.pack(fill='x')
     title = tk.Label(panel, font=ui.F('Georgia', 20), bg=ui.PAPER, fg=ui.INK, anchor='w', wraplength=760)
     title.pack(fill='x', pady=(2,10))
-    text = tk.Text(panel, wrap='word', font=ui.F('Helvetica', 14), padx=18, pady=16,
+    sheet = ui.ScrollFrame(panel)
+    sheet.pack(fill='both', expand=True)
+    diagram_box = tk.Frame(sheet.inner, bg=ui.PAPER)
+    diagram_box.pack(fill='x')
+    text = tk.Text(sheet.inner, wrap='word', font=ui.F('Helvetica', 14), height=14, padx=18, pady=16,
                    relief='flat', bg=ui.WHITE, fg=ui.INK)
-    text.pack(fill='both', expand=True)
-    diagram_box = tk.Frame(panel, bg=ui.PAPER)
-    diagram_box.pack(fill='x', before=text)
+    text.pack(fill='x')
     index = [0]
     reveal = tk.BooleanVar(value=False)
     def render(number=None):
@@ -163,6 +165,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
                 tk.Label(diagram_box, text='The setup picture could not be drawn. The written steps below are still the guide.',
                          bg=ui.PAPER, fg=ui.FLAG, wraplength=640, justify='left').pack(anchor='w')
         text.yview_moveto(0)
+        sheet.scroll_to_top()
         previous.configure(state='normal' if index[0] else 'disabled')
         next_button.configure(state='normal' if index[0] < len(steps) else 'disabled')
         choices.selection_clear(0, 'end')
@@ -201,5 +204,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     bottom=tk.Frame(outer,bg=ui.PAPER);bottom.pack(fill='x')
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
     next_button=ui.btn_primary(bottom,'NEXT STEP →',lambda:render(index[0]+1));next_button.pack_configure(side='left',padx=8)
+    if edit_plan is not None:
+        ui.btn_primary(bottom, 'EDIT THIS GUIDE', edit_plan, side='left', padx=8)
     ui.btn_secondary(bottom,'CLOSE GUIDE & CLEAR SESSION',close,side='right')
     render()
