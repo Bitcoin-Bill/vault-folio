@@ -130,8 +130,8 @@ def add_export_controls(parent, app, plan, environment_safe):
         row["label"] = field("Recognizable label (visible before unlock; e.g. Lawyer key)")
         row["label"].insert(0,{"passphrase":"Guide passphrase", "yubikey":"Guide YubiKey", "questions":"Family recovery"}[kind])
         if kind == "passphrase":
-            row["passphrase"] = field("Guide passphrase (12+ characters; not a Bitcoin wallet passphrase)",True)
-            row["confirm"] = field("Confirm passphrase",True)
+            ask_passphrase(row)
+            return
         elif kind == "yubikey":
             tk.Label(box,text="Preconfigured USB HMAC-SHA1 key with touch enabled. See docs/YUBIKEY.md.\n"
                      "The app never overwrites device settings.",wraplength=560,justify="left",
@@ -153,17 +153,50 @@ def add_export_controls(parent, app, plan, environment_safe):
         rows.append(row)
 
     buttons=tk.Frame(inner, bg="#ffffff");buttons.pack(fill="x",pady=8)
-    for kind,label in [("passphrase","+ PASSPHRASE"),("yubikey","+ YUBIKEY"),("questions","+ FAMILY QUESTIONS")]:
+    for kind,label in [("passphrase","ADD PASSPHRASE"),("yubikey","+ YUBIKEY"),("questions","+ FAMILY QUESTIONS")]:
         ui.btn_secondary(buttons,text=label,command=lambda k=kind:add(k),side="left",padx=(0,6))
-    show_var = tk.BooleanVar(value=False)
-    def toggle_secrets():
-        for row in rows:
-            for entry in row["secrets"]:
-                entry.configure(show="" if show_var.get() else "*")
-    tk.Checkbutton(inner, text="Show passphrases and answers while typing", variable=show_var,
-                   command=toggle_secrets, bg="#ffffff", font=ui.F_SMALL,
-                   activebackground="#ffffff").pack(anchor="w", pady=(0, 4))
-    add("passphrase")
+
+    def ask_passphrase(row):
+        dialog = tk.Toplevel(app)
+        dialog.title("Guide passphrase")
+        dialog.transient(app)
+        dialog.grab_set()
+        dialog.configure(bg="#ffffff")
+        tk.Label(dialog, text="This passphrase opens the guide. It is not a bitcoin seed passphrase.",
+                 font=ui.F_BODY, bg="#ffffff", wraplength=460, justify="left").pack(anchor="w", padx=22, pady=(18, 8))
+        show = tk.BooleanVar(value=False)
+        def secret_field(label):
+            tk.Label(dialog, text=label, font=ui.F_SMALL, bg="#ffffff").pack(anchor="w", padx=22)
+            entry = tk.Entry(dialog, show="*", font=ui.F_BODY, width=36)
+            entry.pack(anchor="w", padx=22, pady=(0, 10), ipady=4)
+            return entry
+        first = secret_field("Passphrase, at least 12 characters")
+        second = secret_field("Type it again")
+        def toggle():
+            first.configure(show="" if show.get() else "*")
+            second.configure(show="" if show.get() else "*")
+        tk.Checkbutton(dialog, text="Show passphrase", variable=show, command=toggle,
+                       bg="#ffffff", font=ui.F_BODY).pack(anchor="w", padx=22, pady=(0, 12))
+        def accept():
+            password = first.get()
+            if len(password) < 12 or password != second.get():
+                messagebox.showerror("Guide passphrase", "The two entries must match and contain at least 12 characters.", parent=dialog)
+                return
+            row["passphrase_value"] = password
+            row["confirm_value"] = second.get()
+            first.delete(0, "end")
+            second.delete(0, "end")
+            tk.Label(row["box"], text="Passphrase saved for this method. It is not shown again.",
+                     font=ui.F_SMALL, bg="#ffffff", fg=ui.HINT).pack(anchor="w", padx=12, pady=(0, 10))
+            rows.append(row)
+            dialog.destroy()
+        def cancel():
+            row["box"].destroy()
+            dialog.destroy()
+        ui.btn_primary(dialog, "USE THIS PASSPHRASE", accept, side="left", padx=22, pady=(0, 18))
+        ui.btn_secondary(dialog, "CANCEL", cancel, side="left", padx=8, pady=(0, 18))
+        dialog.protocol("WM_DELETE_WINDOW", cancel)
+        first.focus_set()
 
     def export():
         configs=[]
@@ -173,8 +206,8 @@ def add_export_controls(parent, app, plan, environment_safe):
                 if not 1 <= len(config["label"]) <= 80:
                     raise ValueError("Give each method a label of 1–80 characters.")
                 if row["kind"]=="passphrase":
-                    password=row["passphrase"].get()
-                    if len(password)<12 or password!=row["confirm"].get():
+                    password=row.get("passphrase_value") or ""
+                    if len(password)<12 or password!=row.get("confirm_value"):
                         raise ValueError("Passphrases must match and contain at least 12 characters.")
                     config["passphrase"]=password
                 elif row["kind"]=="yubikey":
@@ -227,6 +260,8 @@ def add_export_controls(parent, app, plan, environment_safe):
                 messagebox.showerror("Save failed","Could not save the encrypted guide. The previous destination remains intact if replacement did not complete.",parent=app)
                 return
             for row in rows:
+                row.pop("passphrase_value", None)
+                row.pop("confirm_value", None)
                 for entry in row["secrets"]:entry.delete(0,"end")
             app.dirty=False;app.opened_format=security.MAGIC
             messagebox.showinfo("Encrypted guide saved","Reopen this saved file and rehearse each intended unlock method with family. "

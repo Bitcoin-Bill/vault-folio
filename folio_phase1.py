@@ -67,7 +67,11 @@ def interview_questions(state):
         ("plan_name", "What should this plan be called?",
          "A short name your family will recognize. Do not enter a seed or a key.", "text", None),
         ("owner", "Whose bitcoin does this plan describe?",
-         "A name is enough.", "text", None),
+         "A name is enough. This is the person the guide is about, not a key holder.", "text", None),
+        ("jurisdiction", "What country or region should the family mention to a lawyer?",
+         "A country or province is enough. This does not choose a law by itself.", "text", None),
+        ("letter_where", "Where should the sealed guide file be found?",
+         "A broad place, such as with the executor or in the estate folder. Not a seed location.", "text", None),
         ("structure", "Does spending need one key, or several keys that must agree?",
          "Copies of the same backup are still one key. Do not type the key or the seed.",
          "choice", [("single", "One key"), ("multi", "Several keys must agree"), ("unsure", "I'm not sure")]),
@@ -148,7 +152,7 @@ def apply_answer(state, key, value):
     if rejects_secret(value if isinstance(value, str) else ""):
         return "This guide never stores a seed, private key, or recovery phrase. Describe the place or the person, not the secret."
     draft = state["draft"]
-    if key in ("plan_name", "owner", "contact", "map_holder", "restored", "test_spend"):
+    if key in ("plan_name", "owner", "jurisdiction", "letter_where", "contact", "map_holder", "restored", "test_spend"):
         state[key] = value
         return None
     if key == "heir":
@@ -205,7 +209,7 @@ def build_plan(state):
     plan = {
         "meta": {"app": "Vault Folio", "version": 1, "created": date.today().isoformat(),
                  "planName": state.get("plan_name") or "", "owner": state.get("owner") or "",
-                 "jurisdiction": "", "legalNotes": ""},
+                 "jurisdiction": state.get("jurisdiction") or "", "legalNotes": ""},
         "people": {"executor": state.get("contact") or "", "trustee": state.get("map_holder") or "",
                    "helper": "", "heirs": [{"name": name} for name in state.get("heirs") or []]},
         "vaults": [],
@@ -214,7 +218,7 @@ def build_plan(state):
         "backups": {"descriptorLocations": [], "watchOnly": "", "rescanHeight": "",
                     "sampleAddresses": "", "testedSoftware": ""},
         "inheritance": {"mechanism": "", "releaseConditions": "", "legalDocs": "",
-                        "letterLocation": "", "heartbeat": "", "canary": ""},
+                        "letterLocation": state.get("letter_where") or "", "heartbeat": "", "canary": ""},
         "rehearsal": {"restoreDrill": state.get("restored") or "", "familyWalkthrough": "",
                       "testSpendDate": "", "notes": ""},
         "ownerNotes": "Started from the phase-1 setup interview. Seeds and keys were not requested.",
@@ -316,10 +320,14 @@ class _Interview:
         pad.pack(fill="both", expand=True, padx=70, pady=36)
         self.tk.Label(pad, text=f"QUESTION {self.index + 1} OF {len(questions)}",
                       font=("Courier", 9), bg="#fafaf8", fg="#6b6b6b").pack(anchor="w")
-        self.tk.Label(pad, text=title, font=("Georgia", 22), bg="#fafaf8", fg="#0a0a0a",
-                      wraplength=720, justify="left").pack(anchor="w", pady=(8, 8))
-        self.tk.Label(pad, text=help_text, font=("Helvetica", 11), bg="#fafaf8", fg="#2e2e2e",
-                      wraplength=720, justify="left").pack(anchor="w", pady=(0, 16))
+        self.tk.Label(pad, text=title, font=("Georgia", 26), bg="#fafaf8", fg="#0a0a0a",
+                      wraplength=860, justify="left").pack(anchor="w", pady=(8, 8))
+        help_row = self.tk.Frame(pad, bg="#fafaf8")
+        help_row.pack(anchor="w", fill="x", pady=(0, 16))
+        self.tk.Label(help_row, text=help_text, font=("Helvetica", 14), bg="#fafaf8", fg="#2e2e2e",
+                      wraplength=760, justify="left").pack(side="left")
+        self.tk.Button(help_row, text="?", font=("Helvetica", 14, "bold"), width=2,
+                       command=lambda text=help_text, title=title: self.messagebox.showinfo(title, text)).pack(side="left", padx=(12, 0))
         self.value.set(self.restore_value if self.restore_value is not None else "")
         self.restore_value = None
         if kind == "choice":

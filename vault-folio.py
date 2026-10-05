@@ -864,9 +864,13 @@ class App(tk.Tk):
     def __init__(self, *, test_mode=False, ubuntu_test=False):
         super().__init__()
         self.title(f"{APP_NAME} — Cold Storage Plan & Inheritance File")
-        self.geometry("1040x780")
-        self.minsize(920, 640)
+        self.geometry("1280x900")
+        self.minsize(1100, 760)
         self.configure(bg=PAPER)
+        try:
+            self.tk.call("tk", "scaling", 1.8)
+        except tk.TclError:
+            pass
         ui.init_style(self)
         self.plan = blank_plan()
         self.active_plan = None

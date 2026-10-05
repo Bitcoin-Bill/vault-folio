@@ -12,13 +12,13 @@ WHITE = "#ffffff"
 HINT = "#6b6b6b"
 BODY_TEXT = "#2e2e2e"
 
-F_H2 = ("Georgia", 17)
-F_H3 = ("Georgia", 13)
-F_BODY = ("Helvetica", 11)
-F_SMALL = ("Helvetica", 9)
-F_MONO = ("Courier", 10)
-F_MONO_B = ("Courier", 10, "bold")
-F_BADGE = ("Courier", 8, "bold")
+F_H2 = ("Georgia", 22)
+F_H3 = ("Georgia", 16)
+F_BODY = ("Helvetica", 14)
+F_SMALL = ("Helvetica", 12)
+F_MONO = ("Courier", 13)
+F_MONO_B = ("Courier", 13, "bold")
+F_BADGE = ("Courier", 11, "bold")
 
 
 def init_style(root):
