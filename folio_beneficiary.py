@@ -1,7 +1,7 @@
 """Read-only, plain-language heir journey. Never executes a recovery or edits a plan."""
 import copy
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, simpledialog, ttk
 import folio_ui as ui
 from folio_catalog import record_fields
 
@@ -122,7 +122,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     outer = tk.Frame(app, bg=ui.PAPER)
     outer.pack(fill='both', expand=True, padx=24, pady=16)
     tk.Label(outer, text='Your family’s recovery guide', font=ui.F('Georgia', 24), bg=ui.PAPER, fg=ui.INK).pack(anchor='w')
-    tk.Label(outer, text='One step at a time. No changes are saved in this view.', bg=ui.PAPER).pack(anchor='w', pady=(4,16))
+    tk.Label(outer, text='One step at a time. Notes can be saved back into the encrypted file.', bg=ui.PAPER).pack(anchor='w', pady=(4,16))
     body = tk.Frame(outer, bg=ui.PAPER); body.pack(fill='both', expand=True)
     nav = tk.Frame(body, bg=ui.PAPER2); nav.pack(side='left', fill='y', padx=(0,18))
     panel = tk.Frame(body, bg=ui.PAPER); panel.pack(side='left', fill='both', expand=True)
@@ -166,17 +166,48 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
         choices.selection_set(index[0])
         choices.see(index[0])
     count = len(recovery_steps(plan))
-    choices = tk.Listbox(nav, width=30, exportselection=False, font=('Helvetica',11),
+    choices = tk.Listbox(nav, width=28, exportselection=False, font=ui.F('Helvetica', 12),
                          relief='flat', highlightthickness=0, activestyle='none',
                          bg=ui.PAPER2, fg=ui.INK, selectbackground=ui.INK, selectforeground=ui.PAPER)
     choices.pack(side='left', fill='both', expand=True)
     nav_scroll = ttk.Scrollbar(nav, command=choices.yview)
     nav_scroll.pack(side='right', fill='y')
     choices.configure(yscrollcommand=nav_scroll.set)
+    choices.insert('end', 'Overview')
     for i,(heading,_) in enumerate(recovery_steps(plan)):
         choices.insert('end', f'{i+1}. {heading}')
     choices.insert('end', f'{count+1}. Full reference')
     choices.bind('<<ListboxSelect>>', lambda _: render(choices.curselection()[0]) if choices.curselection() else None)
+    notes = tk.Text(outer, height=4, wrap='word', font=ui.F('Helvetica', 12), bg=ui.WHITE, fg=ui.INK)
+    notes.insert('1.0', str(plan.get('heirNotes') or ''))
+    notes.pack(fill='x', pady=(8, 4))
+    checks = plan.setdefault('heirChecklist', {})
+    check_row = tk.Frame(outer, bg=ui.PAPER)
+    check_row.pack(fill='x')
+    for number, (heading, _detail) in enumerate(recovery_steps(plan), start=1):
+        var = tk.BooleanVar(value=bool(checks.get(number)))
+        tk.Checkbutton(check_row, text=str(number) + ' ' + heading, variable=var, bg=ui.PAPER, fg=ui.INK,
+                       command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
+    def save_notes():
+        plan['heirNotes'] = notes.get('1.0', 'end-1c')
+        path = getattr(app, 'guide_path', '')
+        if not path:
+            messagebox.showinfo('Vault Folio', 'Open the encrypted file again, then save the notes.')
+            return
+        password = simpledialog.askstring('Vault Folio', 'Enter the guide passphrase to save these notes:', show='*', parent=app)
+        if not password:
+            return
+        try:
+            from folio_security import seal
+            from folio_storage import save_encrypted
+            save_encrypted(path, seal(plan, [{'kind': 'passphrase', 'label': 'Guide passphrase', 'passphrase': password}]))
+        except Exception as exc:
+            messagebox.showerror('Vault Folio', str(exc))
+            return
+        finally:
+            password = None
+        messagebox.showinfo('Vault Folio', 'Notes and checklist were saved into the encrypted file.')
+    tk.Button(outer, text='SAVE NOTES INTO ENCRYPTED FILE', command=save_notes).pack(anchor='w', pady=6)
     tk.Checkbutton(outer, text='Show direct journal / watch-only access details on screen', variable=reveal, command=render, bg=ui.PAPER).pack(anchor='w', pady=10)
     bottom=tk.Frame(outer,bg=ui.PAPER);bottom.pack(fill='x')
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')

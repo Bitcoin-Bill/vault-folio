@@ -842,15 +842,15 @@ def canvas_family_map(cv, plan):
     key_width = mx * 2 + n * key_w + (n - 1) * gap
     people_width = mx + max(0, len(people_cards) - 1) * 210 + 196 + mx
     width = max(860, key_width, people_width)
-    height = 250 + 110
+    height = 360
     cv.configure(width=min(width, 820), height=height, bg=PAPER, highlightthickness=0,
                  scrollregion=(0, 0, width, height))
     rule = f"{m}-of-{n}" if m and n else (vault.get("setupType") or "setup")
     cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK)
     cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=themes.F("Courier", 8), fill=HINT)
-    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=themes.F("Courier", 11, "bold"), fill=INK, tags=("setup",))
+    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 18), font=themes.F("Courier", 11, "bold"), fill=INK, tags=("setup",))
     cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK, tags=("setup",))
-    cv.create_text(300, 48, anchor="w", text=str(rule).upper() + "  · click a card", font=themes.F("Courier", 11, "bold"), fill=FLAG)
+    cv.create_text(mx, 96, anchor="w", text=str(rule).upper() + "  · click a card", font=themes.F("Courier", 11, "bold"), fill=FLAG)
     cv.tag_bind("setup", "<Button-1>", lambda _e, v=vault: show_tree_detail("This setup", [
         ("Name", v.get("name") or "Unnamed setup"),
         ("Rule", rule),
@@ -859,7 +859,7 @@ def canvas_family_map(cv, plan):
     ]))
     for i in range(n):
         x = mx + i * (key_w + gap)
-        y = 108
+        y = 132
         key = keys[i]
         holder, place = backup_details(key)
         cv.create_line(150, 78, x + key_w / 2, y, fill=LINE)
@@ -877,7 +877,7 @@ def canvas_family_map(cv, plan):
         ]))
     for i, (label, value) in enumerate(people_cards):
         x = mx + i * 210
-        y = 240
+        y = 268
         tag = f"person{i}"
         cv.create_rectangle(x, y, x + 196, y + 72, fill=WHITE, outline=INK, tags=(tag,))
         cv.create_text(x + 10, y + 18, anchor="w", text=label, font=themes.F("Courier", 8), fill=HINT, tags=(tag,))
@@ -926,7 +926,7 @@ def show_tree_detail(title, rows):
 
 
 def canvas_psbt_flow(cv, medium):
-    w, h, wall = 700, 226, 352
+    w, h, wall = 760, 280, 380
     med = _short(medium or "QR codes / removable media, as recorded in the plan", 40)
     cv.configure(width=w, height=h)
     cv.create_text(24, 22, anchor="w", text="ONLINE SIDE — the everyday machine",
@@ -945,16 +945,16 @@ def canvas_psbt_flow(cv, medium):
             cv.create_text(x + 12, ty, anchor="w", text=line, font=themes.F("Courier", 7), fill=INK_SOFT)
             ty += 13
 
-    box(24, 44, 252, 74, "1 · WATCH-ONLY COORDINATOR",
-        ["Builds the unsigned transaction (PSBT).", "Sees balances and addresses — cannot sign."])
-    box(424, 44, 252, 74, "2 · SIGNING DEVICE",
-        ["Check address, amount, fee on ITS screen.", "If anything differs — stop. Then sign."])
-    box(24, 140, 252, 60, "4 · FINALIZE & BROADCAST",
-        ["The signed PSBT returns here and is sent", "to the Bitcoin network."])
-    cv.create_line(276, 81, 418, 81, fill=INK, width=1, arrow="last")
-    cv.create_text(347, 72, text="unsigned PSBT", font=themes.F("Courier", 7), fill=INK)
-    cv.create_line(550, 118, 550, 170, 282, 170, fill=INK, width=1, arrow="last")
-    cv.create_text(416, 160, text="signed PSBT — 3", font=themes.F("Courier", 7), fill=INK)
+    box(16, 50, 300, 96, "1 · WATCH-ONLY",
+        ["Builds the unsigned transaction.", "Cannot sign."])
+    box(440, 50, 300, 96, "2 · SIGNING DEVICE",
+        ["Check address, amount, and fee.", "Stop if anything differs."])
+    box(16, 176, 300, 78, "4 · BROADCAST",
+        ["The signed transaction returns here."])
+    cv.create_line(316, 98, 430, 98, fill=INK, width=1, arrow="last")
+    cv.create_text(372, 84, text="unsigned", font=themes.F("Courier", 7), fill=INK)
+    cv.create_line(590, 146, 590, 168, 330, 168, fill=INK, width=1, arrow="last")
+    cv.create_text(500, 156, text="signed · 3", font=themes.F("Courier", 7), fill=INK)
 
 
 # --------------------------------------------------------------------------
@@ -1295,6 +1295,7 @@ def open_file_flow(app):
         finally:
             password = None
         app.opened_format = "VAULTFOLIO/2 · SYNTHETIC TEST"
+        app.guide_path = path
         open_choice(app, plan)
         return
     if not app.ubuntu_test and not environment_is_safe(environment_report(), test_mode=False):
@@ -1314,6 +1315,7 @@ def open_file_flow(app):
         messagebox.showerror(APP_NAME, "Not a readable JSON file.")
         return
     app.opened_format = env.get("magic") if isinstance(env, dict) else None
+    app.guide_path = path
     if isinstance(env, dict) and env.get("magic") == HARDWARE_MAGIC:
         open_hardware(app, env, lambda plan: open_choice(app, plan),
                       lambda: app.ubuntu_test or environment_is_safe(environment_report(), test_mode=False))
