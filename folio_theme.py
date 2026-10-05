@@ -41,14 +41,15 @@ _COLOR_OPTIONS = ("bg", "background", "fg", "foreground", "activebackground",
                   "highlightcolor", "insertbackground", "disabledforeground")
 
 # --- interface scale -------------------------------------------------------
-# `tk scaling` only resizes fonts specified in *points* (negative sizes) and
-# geometry in physical units. This app specifies every font in pixels, so the
-# slider alone changed nothing. Real scaling is done here: every font in the
+# Tk font sizes: POSITIVE numbers are points (rescaled by `tk scaling`),
+# NEGATIVE numbers are pixels (fixed). This app uses positive sizes, so
+# touching `tk scaling` on top of F() would double-scale every font; and the
+# default named fonts are pixel-sized (negative), so `tk scaling` never moved
+# them at all. Scaling is done entirely here, exactly once: every font in the
 # app comes either from a registered module constant or from F(), and
 # set_scaling() rewrites those sources plus everything already on screen.
 MIN_SCALE, MAX_SCALE = 1.0, 2.4
 _factor = 1.0
-_base_tk_scaling = None          # display's own tk scaling, captured on first use
 _font_bases = {}                 # F() key -> unscaled pixel size
 _ns_font_bases = {}              # id(namespace) -> {name: (family, size, styles)}
 _named_bases = {}                # named font -> unscaled pixel size
@@ -191,11 +192,12 @@ def _rescale_font(spec, old, new, root):
     if size_index is None or size_index == 0:
         return None  # named font or malformed: leave alone
     size = int(tokens[size_index])
-    if size <= 0:
-        return None  # point-sized: already handled by `tk scaling`
+    scaled = max(6, int(round(abs(size) / old * new)))
+    if size < 0:
+        scaled = -scaled  # pixel-sized spec: keep the negative sign
     family = " ".join(tokens[:size_index])
     styles = tokens[size_index + 1:]
-    return (family, max(6, int(round(size / old * new)))) + tuple(styles)
+    return (family, scaled) + tuple(styles)
 
 
 def _rescale(widget, old, new):
@@ -235,18 +237,13 @@ def _rescale(widget, old, new):
 
 
 def set_scaling(root, value):
-    """Set the interface scale (1.0 = as designed). Returns the clamped value."""
-    global _base_tk_scaling
+    """Set the interface scale (1.0 = as designed). Returns the clamped value.
+
+    Never touches `tk scaling`: every font is rescaled exactly once, here."""
     old = _factor
     new = _set_factor(value)
     if new == old:
         return new
-    if _base_tk_scaling is None:
-        try:
-            _base_tk_scaling = float(root.tk.call("tk", "scaling"))
-        except (tk.TclError, ValueError):
-            _base_tk_scaling = 1.0
-    root.tk.call("tk", "scaling", _base_tk_scaling * new)
     from tkinter import font as tkfont
     for name in _NAMED_FONTS:  # widgets created without an explicit font
         try:
@@ -254,10 +251,11 @@ def set_scaling(root, value):
         except tk.TclError:
             continue
         size = named.cget("size")
-        if size <= 0:
-            continue  # point-sized: `tk scaling` above already covers it
-        _named_bases.setdefault(name, size / old)
-        named.configure(size=max(6, int(round(_named_bases[name] * new))))
+        if size == 0:
+            continue
+        _named_bases.setdefault(name, abs(size) / old)
+        scaled = max(6, int(round(_named_bases[name] * new)))
+        named.configure(size=scaled if size > 0 else -scaled)  # keep px/pt sign
     _sync()
     import folio_ui as ui
     ui.init_style(root)

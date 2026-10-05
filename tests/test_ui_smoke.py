@@ -68,9 +68,93 @@ class ScreenConstructionTests(unittest.TestCase):
         self.vf.Wizard(self.app, self.plan())
         self.app.update_idletasks()
 
+
+    def test_heir_nav_every_row_renders_without_errors(self):
+        """Regression: the sidebar used raw listbox indices, shifting every row
+        and crashing on 'Full reference' with an IndexError."""
+        import tkinter as tk
+        errors = []
+        tk.Tk.report_callback_exception = lambda _self, *a: errors.append(a[1])
+        self.vf.show_heir(self.app, self.plan())
+        self.app.update_idletasks()
+        listboxes = []
+        def find(widget):
+            if isinstance(widget, tk.Listbox):
+                listboxes.append(widget)
+            for child in widget.winfo_children():
+                find(child)
+        find(self.app)
+        nav = listboxes[0]
+        first_row_label = str(nav.get(0))
+        self.assertTrue(first_row_label.startswith("1."), first_row_label)
+        for row in range(nav.size()):
+            nav.selection_clear(0, "end")
+            nav.selection_set(row)
+            nav.event_generate("<<ListboxSelect>>")
+            self.app.update_idletasks()
+        self.assertEqual(errors, [])
+
+    def test_heir_checklist_state_survives_reopen(self):
+        """Regression: checklist keys were written as str but read as int,
+        so saved checkmarks always came back unchecked."""
+        import tkinter as tk
+        plan = self.plan()
+        plan["heirChecklist"] = {"1": True}
+        self.vf.show_heir(self.app, plan)
+        self.app.update_idletasks()
+        boxes = []
+        def find(widget):
+            if isinstance(widget, tk.Checkbutton):
+                boxes.append(widget)
+            for child in widget.winfo_children():
+                find(child)
+        find(self.app)
+        checklist = [b for b in boxes if str(b.cget("text"))[0].isdigit()]
+        self.assertTrue(checklist, "no checklist rendered")
+        self.assertEqual(checklist[0].getvar(checklist[0].cget("variable")), True)
+
     def test_detail_window_constructs(self):
         self.vf.show_tree_detail("Key 1", [("Holder", "Ada"), ("Location", "home safe")])
         self.app.update_idletasks()
+
+    def test_diagram_cards_contain_their_text_at_2x(self):
+        """Regression: fixed card heights and the canvas width= phantom-space
+        quirk spilled wrapped text out of its card at other interface scales."""
+        import tkinter as tk
+        import folio_theme as themes
+        free_prefixes = ("PEOPLE", "NUMBERED GUIDE", "unsigned PSBT",
+                         "signed PSBT", "THE AIR GAP", "ONLINE SIDE", "AIR-GAPPED")
+        themes.set_scaling(self.app, 2.0)
+        try:
+            plan = self.plan()
+            drawers = (lambda cv: self.vf.canvas_family_map(cv, plan),
+                       lambda cv: self.vf.canvas_quorum(cv, plan["vaults"][0], 0),
+                       lambda cv: self.vf.canvas_psbt_flow(cv, "QR codes"))
+            for drawer in drawers:
+                cv = tk.Canvas(self.app)
+                drawer(cv)
+                self.app.update_idletasks()
+                rects = [cv.bbox(i) for i in cv.find_all()
+                         if cv.type(i) == "rectangle"]
+                self.assertTrue(rects, "diagram drew no cards")
+                min_top = min(r[1] for r in rects)
+                for i in cv.find_all():
+                    if cv.type(i) != "text":
+                        continue
+                    bb = cv.bbox(i)
+                    if bb[3] <= min_top + 2:
+                        continue  # header band above the first card
+                    text = cv.itemcget(i, "text")
+                    if text.startswith(free_prefixes):
+                        continue  # intentional labels outside cards
+                    self.assertTrue(
+                        any(r[0] <= bb[0] + 2 and r[1] <= bb[1] + 2 and
+                            r[2] >= bb[2] - 2 and r[3] >= bb[3] - 2
+                            for r in rects),
+                        f"text spills its card: {text[:30]!r} bbox={bb}")
+                cv.destroy()
+        finally:
+            themes.set_scaling(self.app, 1.0)
 
 
 if __name__ == "__main__":

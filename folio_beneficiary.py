@@ -1,7 +1,7 @@
 """Read-only, plain-language heir journey. Never executes a recovery or edits a plan."""
 import copy
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import ttk
 import folio_ui as ui
 from folio_catalog import record_fields
 
@@ -109,7 +109,7 @@ def recovery_steps(plan, reveal=False):
 
 
 
-def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
+def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_plan=None):
     """Distinct UI: step navigation, no editable questionnaire, no export actions.
 
     draw_diagrams (optional) is called as draw_diagrams(box, plan) on the
@@ -142,6 +142,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     def render(number=None):
         if number is not None: index[0] = number
         steps = recovery_steps(plan, reveal.get())
+        index[0] = max(0, min(index[0], len(steps)))  # len(steps) = Full reference
         total = len(steps) + 1
         if index[0] == len(steps):
             heading, content = 'Full reference (advanced)', full_reference(visible_plan(plan, reveal.get()))
@@ -175,7 +176,6 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     nav_scroll = ttk.Scrollbar(nav, command=choices.yview)
     nav_scroll.pack(side='right', fill='y')
     choices.configure(yscrollcommand=nav_scroll.set)
-    choices.insert('end', 'Overview')
     for i,(heading,_) in enumerate(recovery_steps(plan)):
         choices.insert('end', f'{i+1}. {heading}')
     choices.insert('end', f'{count+1}. Full reference')
@@ -187,29 +187,16 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     check_row = tk.Frame(outer, bg=ui.PAPER)
     check_row.pack(fill='x')
     for number, (heading, _detail) in enumerate(recovery_steps(plan), start=1):
-        var = tk.BooleanVar(value=bool(checks.get(number)))
+        var = tk.BooleanVar(value=bool(checks.get(str(number))))
         tk.Checkbutton(check_row, text=str(number) + ' ' + heading, variable=var, bg=ui.PAPER, fg=ui.INK,
                        command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
-    def save_notes():
-        plan['heirNotes'] = notes.get('1.0', 'end-1c')
-        path = getattr(app, 'guide_path', '')
-        if not path:
-            messagebox.showinfo('Vault Folio', 'Open the encrypted file again, then save the notes.')
-            return
-        password = simpledialog.askstring('Vault Folio', 'Enter the guide passphrase to save these notes:', show='*', parent=app)
-        if not password:
-            return
-        try:
-            from folio_security import seal
-            from folio_storage import save_encrypted
-            save_encrypted(path, seal(plan, [{'kind': 'passphrase', 'label': 'Guide passphrase', 'passphrase': password}]))
-        except Exception as exc:
-            messagebox.showerror('Vault Folio', str(exc))
-            return
-        finally:
-            password = None
-        messagebox.showinfo('Vault Folio', 'Notes and checklist were saved into the encrypted file.')
-    tk.Button(outer, text='SAVE NOTES INTO ENCRYPTED FILE', command=save_notes).pack(anchor='w', pady=6)
+    if save_plan is not None:
+        def save_notes():
+            plan['heirNotes'] = notes.get('1.0', 'end-1c')
+            save_plan(plan)
+        tk.Button(outer, text='SAVE NOTES INTO ENCRYPTED FILE', font=ui.F('Courier', 10, 'bold'),
+                  bg=ui.INK, fg=ui.PAPER, relief='flat', padx=14, pady=8, cursor='hand2',
+                  command=save_notes).pack(anchor='w', pady=6)
     tk.Checkbutton(outer, text='Show direct journal / watch-only access details on screen', variable=reveal, command=render, bg=ui.PAPER).pack(anchor='w', pady=10)
     bottom=tk.Frame(outer,bg=ui.PAPER);bottom.pack(fill='x')
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
