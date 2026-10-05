@@ -131,7 +131,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     title = tk.Label(panel, font=('Georgia', 20), bg=ui.PAPER, fg=ui.INK, anchor='w', wraplength=760)
     title.pack(fill='x', pady=(2,10))
     text = tk.Text(panel, wrap='word', font=('Helvetica', 14), padx=18, pady=16,
-                   relief='flat', bg=ui.WHITE, fg=ui.INK, disabledforeground=ui.INK)
+                   relief='flat', bg=ui.WHITE, fg=ui.INK)
     text.pack(fill='both', expand=True)
     diagram_box = tk.Frame(panel, bg=ui.PAPER)
     diagram_box.pack(fill='x', before=text)
