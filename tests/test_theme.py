@@ -143,6 +143,48 @@ class ThemeApplyTests(unittest.TestCase):
         themes.set_scaling(self.root, 1.0)
         self.assertEqual(ns["F_BODY"], ("Helvetica", 11))
 
+    def test_scaling_never_touches_tk_scaling(self):
+        """tk scaling stays at the display's own value; we scale fonts once."""
+        before = float(self.root.tk.call("tk", "scaling"))
+        themes.set_scaling(self.root, 2.0)
+        after = float(self.root.tk.call("tk", "scaling"))
+        themes.set_scaling(self.root, 1.0)
+        self.assertEqual(before, after)
+
+    def test_scaling_renders_exactly_linearly(self):
+        """Regression: positive tuple sizes are points, so F() plus a
+        `tk scaling` mutation rendered at factor^2 (4x pixels at 2.0x)."""
+        canvas = self.tk.Canvas(self.root)
+        canvas.pack()
+
+        def rendered_width(scale):
+            themes.set_scaling(self.root, scale)
+            item = canvas.create_text(0, 0, text="WATCH-ONLY",
+                                      font=themes.F("Courier", 10, "bold"))
+            bbox = canvas.bbox(item)
+            canvas.delete(item)
+            return bbox[2] - bbox[0]
+
+        base = rendered_width(1.0)
+        doubled = rendered_width(2.0)
+        themes.set_scaling(self.root, 1.0)
+        canvas.destroy()
+        self.assertGreater(base, 0)
+        self.assertAlmostEqual(doubled / base, 2.0, delta=0.15)
+
+    def test_pixel_sized_named_fonts_scale_too(self):
+        """Regression: TkDefaultFont is pixel-sized (negative) on X11 and the
+        old engine skipped every size <= 0, so font-less widgets never scaled."""
+        from tkinter import font as tkfont
+        named = tkfont.nametofont("TkDefaultFont", root=self.root)
+        base = named.cget("size")
+        themes.set_scaling(self.root, 2.0)
+        doubled = named.cget("size")
+        themes.set_scaling(self.root, 1.0)
+        self.assertEqual(abs(doubled), abs(base) * 2)
+        self.assertEqual((doubled < 0), (base < 0))  # pixel/point sign kept
+        self.assertEqual(named.cget("size"), base)  # exact restore
+
     def test_scaling_no_drift_across_round_trips(self):
         tk = self.tk
         label = tk.Label(self.root, text="x", font=themes.F("Georgia", 17))
