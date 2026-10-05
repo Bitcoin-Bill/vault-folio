@@ -1,8 +1,9 @@
 # CSIP — Cold Storage Inheritance Package
 
-For questionnaire-only synthetic demonstration mode and its limitations, see
+For synthetic test mode and its limitations, see
 [RAM-SESSION.md](docs/RAM-SESSION.md). It skips all environment checks and
-disables file opening and export; use made-up answers only.
+allows saving and reopening marked, passphrase-only test files; use made-up
+answers and a new test passphrase only. Normal mode refuses marked test files.
 
 **Vault Folio** is an offline plan-authoring tool for Bitcoin cold storage and
 inheritance. It walks you through documenting *how* your cold storage is built —
@@ -110,6 +111,7 @@ what these checks can prove.
 pip install cryptography        # plus tkinter from your OS; optional ykman for keys
 python3 vault-folio.py --self-test   # verify crypto + logic on your machine
 python3 vault-folio.py               # run — must be offline to pass the gate
+python3 vault-folio.py --test-only-synthetic-questionnaire  # UI + encrypted save/open; invented data only
 python3 -B -m unittest discover -s tests -v  # hardware-free regression tests
 node tests/browser_crypto.cjs        # optional browser/Python compatibility test
 ```

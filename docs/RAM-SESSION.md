@@ -66,12 +66,16 @@ they do not certify any live distribution.
 
 ## Temporary questionnaire demo mode
 
-The air-gap transfer bundle includes a questionnaire-only synthetic demo mode.
-It skips all environment checks so the interface can be explored on unsupported
-live-session layouts. It disables guide-file opening, unlock credentials,
-YubiKey actions, and encrypted export. Use only made-up answers: the mode offers
-no offline, swap, or RAM-session protection and does not establish that memory
-is nonpersistent. A normal launch keeps every environment check and fails closed.
+The air-gap transfer bundle includes a synthetic test mode. It skips all
+environment checks so the interface and encrypted save/open flow can be tried on
+unsupported live-session layouts. It saves only passphrase-protected VAULTFOLIO/2
+files carrying a `syntheticTest` marker, and opens only marked files with that
+passphrase method. It does not offer YubiKey enrollment or unlock. Normal mode
+refuses marked test files. Use invented answers and a new test passphrase only;
+never enter a real inheritance plan or reuse a real passphrase. The file is
+encrypted, but this mode offers no offline, swap, or RAM-session protection and
+does not establish that memory is nonpersistent. A normal launch keeps every
+environment check and fails closed.
 
 Primary references:
 - Linux tmpfs and swap: https://docs.kernel.org/filesystems/tmpfs.html

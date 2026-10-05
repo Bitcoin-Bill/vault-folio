@@ -55,7 +55,7 @@ def interview_questions(state):
     ]
     if not draft.get("structure"):
         return questions
-    questions.append(("name", "What should your family call this wallet?",
+    questions.append(("name", "What should your family call this setup?",
                       "For example, household savings.", "text", None))
     structure = draft.get("structure")
     if structure == "single":
@@ -90,19 +90,19 @@ def interview_questions(state):
     if draft.get("delayed") == "yes":
         questions.append(("delayed_kind", "What controls that delay?",
                           "Choose the closest description.",
-                          "choice", [("onchain", "A delay built into the wallet policy"),
+                          "choice", [("onchain", "A delay built into this setup’s policy"),
                                      ("provider", "A company or person releases access"),
                                      ("unsure", "I'm not sure")]))
         if draft.get("delayed_kind") == "onchain":
             questions.append(("delay", "What delay is documented?",
                               "For example, 12 months after the last activity. Leave blank if unknown.", "text", None))
     if structure == "multi" or draft.get("delayed") == "yes":
-        questions.append(("config_where", "Where is the wallet configuration copy?",
+        questions.append(("config_where", "Where is the setup configuration copy?",
                           "The configuration, not a seed. Not sure is allowed.", "text", None))
     if _wallet_ready(draft):
-        questions.append(("another", "Is there another wallet to describe?",
+        questions.append(("another", "Is there another setup to describe?",
                           "You can add more later in the plan editor.",
-                          "choice", [("yes", "Yes, another wallet"), ("no", "No, continue")]))
+                          "choice", [("yes", "Yes, another setup"), ("no", "No, continue")]))
     if not state.get("wallets_done"):
         return questions
     questions.extend([
