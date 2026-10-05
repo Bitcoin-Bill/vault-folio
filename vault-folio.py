@@ -23,7 +23,7 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
 Requires: Python 3.9+, tkinter, cryptography
 Run:      python3 vault-folio.py          (normal; requires verified RAM-backed session)
-          python3 vault-folio.py --test-session (Tails/test launch: skips the air-gap gate; invented data only)
+          python3 vault-folio.py --ubuntu-test   (installed Ubuntu: skip the air-gap lock, full encrypted save)
           python3 vault-folio.py --self-test   (headless crypto/risk check)
 """
 
@@ -861,7 +861,7 @@ def folio_label(parent, text):
 
 
 class App(tk.Tk):
-    def __init__(self, *, test_mode=False):
+    def __init__(self, *, test_mode=False, ubuntu_test=False):
         super().__init__()
         self.title(f"{APP_NAME} — Cold Storage Plan & Inheritance File")
         self.geometry("1040x780")
@@ -873,6 +873,7 @@ class App(tk.Tk):
         self.dirty = False
         self._locked = False
         self.test_mode = test_mode
+        self.ubuntu_test = ubuntu_test
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
         self.after(15_000, self._guard_tick)
@@ -905,6 +906,8 @@ class App(tk.Tk):
     def header(self, status="OFFLINE / RAM CHECKS PASSED", ok=True):
         if self.test_mode:
             status, ok = "TEST ONLY · SYNTHETIC FILES · ENVIRONMENT CHECKS SKIPPED", False
+        elif self.ubuntu_test:
+            status, ok = "UBUNTU TEST · AIR-GAP LOCK SKIPPED · NOT AN OFFLINE SESSION", False
         bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         bar.pack(fill="x")
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
@@ -917,8 +920,7 @@ class App(tk.Tk):
 
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
-        if self.test_mode:
-            # Test launch only. Skips the air-gap gate so the interface and encrypted save can be tried.
+        if self.test_mode or self.ubuntu_test:
             self.lift_gate()
             return
         self.clear()
@@ -1012,7 +1014,7 @@ class App(tk.Tk):
 
     # ---- mid-session guard ------------------------------------------------
     def _guard_tick(self):
-        if not self._locked and not self.test_mode:
+        if not self._locked and not self.test_mode and not self.ubuntu_test:
             threading.Thread(target=self._guard_probe, daemon=True).start()
         self.after(15_000, self._guard_tick)
 
@@ -1105,6 +1107,11 @@ def home_screen(app):
                  "Only marked test files can be opened or saved. Enter no real inheritance details.",
                  font=F_MONO_B, bg="#ffe0dc", fg=FLAG, justify="left", wraplength=680,
                  padx=12, pady=10).pack(fill="x", pady=(0, 14))
+    elif app.ubuntu_test:
+        tk.Label(pad, text="UBUNTU TEST — the air-gap lock is skipped. Encrypted save and the full guide are available. "
+                 "This is not an offline session. Do not enter a real plan on a networked machine.",
+                 font=F_MONO_B, bg="#ffe0dc", fg=FLAG, justify="left", wraplength=680,
+                 padx=12, pady=10).pack(fill="x", pady=(0, 14))
     tk.Label(pad, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left", wraplength=680,
              text="Vault Folio walks you through documenting how your Bitcoin cold storage is built — "
                   "the quorum, the keys, the backups, the signing procedure, the inheritance path — then "
@@ -1179,7 +1186,7 @@ def open_file_flow(app):
         app.opened_format = "VAULTFOLIO/2 · SYNTHETIC TEST"
         open_choice(app, plan)
         return
-    if not environment_is_safe(environment_report(), test_mode=False):
+    if not app.ubuntu_test and not environment_is_safe(environment_report(), test_mode=False):
         messagebox.showerror(APP_NAME, "Offline / RAM-session checks failed. Nothing opened.")
         return
     path = filedialog.askopenfilename(
@@ -1198,7 +1205,7 @@ def open_file_flow(app):
     app.opened_format = env.get("magic") if isinstance(env, dict) else None
     if isinstance(env, dict) and env.get("magic") == HARDWARE_MAGIC:
         open_hardware(app, env, lambda plan: open_choice(app, plan),
-                      lambda: environment_is_safe(environment_report(), test_mode=False))
+                      lambda: app.ubuntu_test or environment_is_safe(environment_report(), test_mode=False))
         return
     if isinstance(env, dict) and env.get("magic") == ENC_MAGIC:
         pw = simpledialog.askstring(APP_NAME, "This plan file is sealed.\nEnter its passphrase:",
@@ -1211,7 +1218,7 @@ def open_file_flow(app):
             messagebox.showerror(APP_NAME, str(e))
             return
         pw = None  # drop reference
-        if not environment_is_safe(environment_report(), test_mode=False):
+        if not app.ubuntu_test and not environment_is_safe(environment_report(), test_mode=False):
             discard_plan(plan)
             messagebox.showerror(APP_NAME, "Environment became unsafe. Nothing opened.")
             return
@@ -2194,7 +2201,7 @@ class Wizard:
                            "to your lawyer if desired. Keep the program, encrypted file, and non-secret discovery instructions "
                            "where family can find them. Release conditions are instructions, not a software-enforced time lock.")
             add_export_controls(pad, self.app, self.plan,
-                                lambda: environment_is_safe(environment_report()))
+                                lambda: self.app.ubuntu_test or environment_is_safe(environment_report()))
 
         # --- preview: the pictures the family will see ---------------------
         if self.plan["vaults"]:
@@ -2314,7 +2321,8 @@ def main():
     harden_process()  # RAM gate blocks if this cannot be established.
     test_mode = any(flag in sys.argv for flag in (
         "--test-session", "--test-only-synthetic-questionnaire"))
-    app = App(test_mode=test_mode)
+    ubuntu_test = "--ubuntu-test" in sys.argv
+    app = App(test_mode=test_mode, ubuntu_test=ubuntu_test)
     app.mainloop()
 
 
