@@ -2,6 +2,7 @@
 import copy
 import tkinter as tk
 from tkinter import ttk
+import folio_ui as ui
 from folio_catalog import record_fields
 
 
@@ -108,8 +109,13 @@ def recovery_steps(plan, reveal=False):
 
 
 
-def show_beneficiary(app, plan, close, full_reference):
-    """Distinct UI: step navigation, no editable questionnaire, no export actions."""
+def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
+    """Distinct UI: step navigation, no editable questionnaire, no export actions.
+
+    draw_diagrams (optional) is called as draw_diagrams(box, plan) on the
+    'Understand what exists' step so heirs see the same quorum pictures the
+    owner checked at export time.
+    """
     app.clear()
     app.active_plan = plan
     app.header(status='BENEFICIARY VIEW · READ ONLY')
@@ -120,7 +126,11 @@ def show_beneficiary(app, plan, close, full_reference):
     body = tk.Frame(outer, bg='#fafaf8'); body.pack(fill='both', expand=True)
     nav = tk.Frame(body, bg='#f0efeb'); nav.pack(side='left', fill='y', padx=(0,18))
     panel = tk.Frame(body, bg='#fafaf8'); panel.pack(side='left', fill='both', expand=True)
-    title = tk.Label(panel, font=('Georgia', 20), bg='#fafaf8', anchor='w', wraplength=610);title.pack(fill='x', pady=(0,12))
+    step_lbl = tk.Label(panel, font=('Courier', 9), fg='#6b6b6b', bg='#fafaf8', anchor='w')
+    step_lbl.pack(fill='x')
+    title = tk.Label(panel, font=('Georgia', 20), bg='#fafaf8', anchor='w', wraplength=610);title.pack(fill='x', pady=(2,10))
+    diagram_box = tk.Frame(panel, bg='#fafaf8')
+    diagram_box.pack(fill='x')
     scroll = ttk.Scrollbar(panel);scroll.pack(side='right', fill='y')
     text = tk.Text(panel, wrap='word', font=('Helvetica',12), padx=18, pady=16, relief='flat', yscrollcommand=scroll.set)
     text.pack(fill='both', expand=True);scroll.configure(command=text.yview)
@@ -129,16 +139,26 @@ def show_beneficiary(app, plan, close, full_reference):
     def render(number=None):
         if number is not None: index[0] = number
         steps = recovery_steps(plan, reveal.get())
+        total = len(steps) + 1  # + Full reference
         if index[0] == len(steps):
             heading, content = 'Full reference (advanced)', full_reference(visible_plan(plan, reveal.get()))
         else:
             heading, content = steps[index[0]]
-        title.configure(text=f'{index[0]+1}. {heading}')
+        step_lbl.configure(text=f'STEP {index[0] + 1} OF {total}')
+        title.configure(text=heading)
+        for w in diagram_box.winfo_children():
+            w.destroy()
+        if draw_diagrams is not None and heading == 'Understand what exists':
+            draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
         text.configure(state='normal');text.delete('1.0','end');text.insert('1.0',content);text.configure(state='disabled');text.yview_moveto(0)
         previous.configure(state='normal' if index[0] else 'disabled')
         next_button.configure(state='normal' if index[0] < len(steps) else 'disabled')
+        choices.selection_clear(0, 'end')
+        choices.selection_set(index[0])
+        choices.see(index[0])
     count = len(recovery_steps(plan))
-    choices = tk.Listbox(nav, width=30, exportselection=False, font=('Helvetica',11))
+    choices = tk.Listbox(nav, width=30, exportselection=False, font=('Helvetica',11),
+                         relief='flat', highlightthickness=0, activestyle='none')
     choices.pack(side='left', fill='both', expand=True)
     nav_scroll = ttk.Scrollbar(nav, command=choices.yview)
     nav_scroll.pack(side='right', fill='y')
@@ -149,7 +169,7 @@ def show_beneficiary(app, plan, close, full_reference):
     choices.bind('<<ListboxSelect>>', lambda _: render(choices.curselection()[0]) if choices.curselection() else None)
     tk.Checkbutton(outer, text='Show direct journal / watch-only access details on screen', variable=reveal, command=render, bg='#fafaf8').pack(anchor='w', pady=10)
     bottom=tk.Frame(outer,bg='#fafaf8');bottom.pack(fill='x')
-    previous=ttk.Button(bottom,text='← Previous',command=lambda:render(index[0]-1));previous.pack(side='left')
-    next_button=ttk.Button(bottom,text='Next step →',command=lambda:render(index[0]+1));next_button.pack(side='left',padx=8)
-    ttk.Button(bottom,text='Close guide & clear session',command=close).pack(side='right')
+    previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
+    next_button=ui.btn_primary(bottom,'NEXT STEP →',lambda:render(index[0]+1));next_button.pack_configure(side='left',padx=8)
+    ui.btn_secondary(bottom,'CLOSE GUIDE & CLEAR SESSION',close,side='right')
     render()

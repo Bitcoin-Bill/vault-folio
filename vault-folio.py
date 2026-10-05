@@ -43,6 +43,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 sys.dont_write_bytecode = True  # RAM discipline: never drop __pycache__ on disk
 
+import folio_ui as ui
 from folio_memory import harden_process, memory_report, discard_plan
 from folio_beneficiary import show_beneficiary
 from folio_document import prepare_plan
@@ -814,10 +815,30 @@ class ScrollFrame(tk.Frame):
         self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfig(self._win, width=e.width))
-        self.canvas.bind_all("<MouseWheel>", self._wheel)
+        self.canvas.bind_all("<MouseWheel>", self._wheel)          # Windows / macOS
+        self.canvas.bind_all("<Button-4>", lambda e: self._wheel_linux(-3))   # Linux
+        self.canvas.bind_all("<Button-5>", lambda e: self._wheel_linux(3))    # Linux
+        self.bind("<Destroy>", self._unbind_wheel)
 
     def _wheel(self, e):
-        self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        try:
+            self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        except tk.TclError:
+            pass
+
+    def _wheel_linux(self, direction):
+        try:
+            self.canvas.yview_scroll(direction, "units")
+        except tk.TclError:
+            pass  # canvas already gone; a newer ScrollFrame owns the bindings
+
+    def _unbind_wheel(self, event):
+        if event.widget is self:
+            for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                try:
+                    self.canvas.unbind_all(sequence)
+                except tk.TclError:
+                    pass
 
 
 def folio_label(parent, text):
@@ -828,9 +849,10 @@ class App(tk.Tk):
     def __init__(self, *, test_mode=False):
         super().__init__()
         self.title(f"{APP_NAME} — Cold Storage Plan & Inheritance File")
-        self.geometry("1040x760")
+        self.geometry("1040x780")
+        self.minsize(920, 640)
         self.configure(bg=PAPER)
-        self.minsize(860, 640)
+        ui.init_style(self)
         self.plan = blank_plan()
         self.active_plan = None
         self.dirty = False
@@ -868,13 +890,15 @@ class App(tk.Tk):
     def header(self, status="OFFLINE / RAM CHECKS PASSED", ok=True):
         if self.test_mode:
             status, ok = "TEST ONLY · NO PLAN FILE OPEN/SAVE · RAM PATH CHECK SKIPPED", False
-        bar = tk.Frame(self, bg=PAPER)
+        bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         bar.pack(fill="x")
-        tk.Frame(self, bg=LINE, height=1).pack(fill="x")
-        tk.Label(bar, text="Vault Folio", font=("Georgia", 16), bg=PAPER, fg=INK).pack(side="left", padx=28, pady=14)
-        tk.Button(bar, text="Clear", command=self.clear_session, font=("Helvetica", 10),
-                  bg=PAPER, fg="#6f6a62", relief="flat").pack(side="right", padx=22)
-        tk.Label(bar, text=status, font=("Helvetica", 10), bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right")
+        tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
+                 font=("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
+        tk.Button(bar, text="CLEAR SESSION", command=self.clear_session,
+                  font=("Courier", 8)).pack(side="right", padx=8)
+        dot = "●" if ok else "●"
+        tk.Label(bar, text=f"{dot}  {status}", font=("Courier", 9),
+                 bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right", padx=16)
 
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
@@ -888,9 +912,9 @@ class App(tk.Tk):
         f.pack(fill="both", expand=True)
         box = tk.Frame(f, bg="#111111", highlightthickness=1, highlightbackground="#444444")
         box.place(relx=0.5, rely=0.5, anchor="center", width=660)
-        tk.Label(box, text="Air-gap check", font=("Helvetica", 10),
+        tk.Label(box, text="VAULT FOLIO · AIR-GAP GATE", font=("Courier", 9),
                  fg="#8a8a84", bg="#111111").pack(anchor="w", padx=36, pady=(28, 10))
-        tk.Label(box, text="This guide stays offline.", font=("Georgia", 24),
+        tk.Label(box, text="Offline, nonpersistent session required.", font=("Georgia", 20),
                  fg=PAPER, bg="#111111").pack(anchor="w", padx=36)
         tk.Label(box, font=F_BODY, fg="#b9b9b4", bg="#111111", justify="left", wraplength=580,
                  text="Vault Folio handles the map to your cold storage. The app opens only when the OS reports "
@@ -905,7 +929,7 @@ class App(tk.Tk):
                       + GATE_HINT).pack(anchor="w", padx=36, pady=(14, 6))
         btns = tk.Frame(box, bg="#111111")
         btns.pack(anchor="w", padx=36, pady=(6, 30))
-        tk.Button(btns, text="Check again", font=("Helvetica", 11), bg=PAPER, fg=INK,
+        tk.Button(btns, text="RE-CHECK ENVIRONMENT", font=F_MONO_B, bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2",
                   command=self.run_gate).pack(side="left")
         self.run_gate()
@@ -1045,9 +1069,9 @@ def home_screen(app):
     pad = tk.Frame(inner, bg=PAPER)
     pad.pack(fill="both", expand=True, padx=60, pady=40)
 
-    folio_label(pad, "Inheritance guide").pack(anchor="w")
-    tk.Label(pad, text="The plan is the part\nthat has to survive you.", font=("Georgia", 32),
-             bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(10, 14))
+    folio_label(pad, "Registry · Cold storage succession · Local network checks active").pack(anchor="w")
+    tk.Label(pad, text="The plan is the part that\nhas to survive you.", font=("Georgia", 26),
+             bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(8, 16))
     if app.test_mode:
         tk.Label(pad, text="TEST MODE — SYNTHETIC DATA ONLY. ENVIRONMENT CHECKS ARE SKIPPED. "
                  "OPENING AND SAVING PLAN FILES ARE DISABLED. Enter no real inheritance details.",
@@ -1084,7 +1108,7 @@ def home_screen(app):
          "Opening files and entering unlock credentials are unavailable in test mode.",
          "DISABLED IN TEST MODE" if app.test_mode else "OPEN PLAN FILE (.CSP)",
          lambda: open_file_flow(app), True, enabled=not app.test_mode)
-    mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new plan",
+    mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new guide",
          "A short interview fills the guide. You then edit the sheets. "
          "It never asks for a seed or a key." if not app.test_mode else
          "Explore the questionnaire with synthetic answers. Test mode never opens or saves guide files.",
@@ -1177,7 +1201,15 @@ def open_choice(app, plan):
 
 
 def show_heir(app, plan):
-    show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text)
+    def draw_diagrams(box, current_plan):
+        """Quorum pictures for the heir journey's 'what exists' step."""
+        for vi, vault in enumerate(current_plan.get("vaults") or []):
+            if not (vault.get("keys") or vault.get("n")):
+                continue
+            cv = tk.Canvas(box, bg="#fafaf8", highlightthickness=0)
+            canvas_quorum(cv, vault, vi)
+            cv.pack(anchor="w", pady=(0, 14))
+    show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams)
 
 
 # --------------------------------------------------------------------------
@@ -1252,13 +1284,11 @@ class Wizard:
 
         nav = tk.Frame(right, bg=PAPER, highlightthickness=1, highlightbackground=LINE)
         nav.pack(fill="x")
-        self.back_btn = tk.Button(nav, text="← BACK / EXIT", font=F_MONO, bg=PAPER, fg=INK, relief="flat",
-                                  padx=14, pady=8, cursor="hand2", command=self.back)
+        self.back_btn = ui.btn_secondary(nav, "← BACK / EXIT", self.back)
         self.back_btn.pack(side="left", padx=8, pady=6)
         self.pos_lbl = tk.Label(nav, text="", font=("Courier", 9), bg=PAPER, fg="#6b6b6b")
         self.pos_lbl.pack(side="left", expand=True)
-        self.next_btn = tk.Button(nav, text="CONTINUE →", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-                                  padx=14, pady=8, cursor="hand2", command=self.forward)
+        self.next_btn = ui.btn_primary(nav, "CONTINUE →", self.forward)
         self.next_btn.pack(side="right", padx=8, pady=6)
 
         self.render()
@@ -1318,11 +1348,12 @@ class Wizard:
         self._label(parent, label, "")
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
         v.trace_add("write", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
-        tk.Entry(parent, textvariable=v, font=F_BODY, bg="#ffffff", fg=INK, relief="solid",
-                 bd=1, highlightthickness=0).pack(fill="x")
+        e = tk.Entry(parent, textvariable=v, font=F_BODY, bg="#ffffff", fg=INK, relief="solid", bd=1)
+        ui.focusable(e)
+        e.pack(fill="x", ipady=3)
+        e.bind("<Return>", lambda _event: (self.forward(), "break")[1])
         if hint:
-            tk.Label(parent, text=hint, font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER,
-                     anchor="w", justify="left", wraplength=620).pack(anchor="w", pady=(2, 0))
+            ui.hint_label(parent, hint).pack(anchor="w", pady=(2, 0))
         return v
 
     def combo(self, parent, label, path, options, hint=""):
@@ -1332,14 +1363,14 @@ class Wizard:
         cb.pack(fill="x")
         cb.bind("<<ComboboxSelected>>", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
         if hint:
-            tk.Label(parent, text=hint, font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER,
-                     anchor="w", justify="left", wraplength=620).pack(anchor="w", pady=(2, 0))
+            ui.hint_label(parent, hint).pack(anchor="w", pady=(2, 0))
         return v
 
     def text(self, parent, label, path, hint=""):
         self._label(parent, label, "")
         t = tk.Text(parent, height=4, font=F_BODY, bg="#ffffff", fg=INK, relief="solid", bd=1,
-                    wrap="word", highlightthickness=0)
+                    wrap="word")
+        ui.focusable(t)
         t.insert("1.0", str(getp(self.plan, path) or ""))
         t.pack(fill="x")
 
@@ -1348,8 +1379,7 @@ class Wizard:
             self.mark_dirty()
         t.bind("<KeyRelease>", sync)
         if hint:
-            tk.Label(parent, text=hint, font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER,
-                     anchor="w", justify="left", wraplength=620).pack(anchor="w", pady=(2, 0))
+            ui.hint_label(parent, hint).pack(anchor="w", pady=(2, 0))
         return t
 
     def checkboxes(self, parent, label, path, pairs):
@@ -1418,7 +1448,8 @@ class Wizard:
         for r in rules:
             fr = tk.Frame(pad, bg=PAPER, highlightthickness=1, highlightbackground=LINE)
             fr.pack(fill="x", pady=2)
-            tk.Label(fr, text="□  " + r, font=F_BODY, bg=PAPER, fg=INK, anchor="w").pack(padx=12, pady=8, anchor="w")
+            tk.Label(fr, text="□  " + r, font=F_BODY, bg=PAPER, fg=INK, anchor="w",
+                     justify="left", wraplength=620).pack(padx=12, pady=8, anchor="w")
         self.note(pad, "Estimated time: 30–60 minutes if your setup exists; longer if this questionnaire "
                        "reveals it is still a story. That is the point of the exercise.")
         tk.Label(pad, text="REQUIRED NONPERSISTENT SESSION", font=F_MONO_B,
@@ -1460,8 +1491,7 @@ class Wizard:
         self.heirs_box = tk.Frame(pad, bg=PAPER)
         self.heirs_box.pack(fill="x")
         self.draw_heirs()
-        tk.Button(pad, text="+ ADD AN HEIR", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2", command=self.add_heir).pack(anchor="w", pady=8)
+        ui.btn_secondary(pad, "+ ADD AN HEIR", self.add_heir, anchor="w", pady=8)
 
     def draw_heirs(self):
         for w in self.heirs_box.winfo_children():
@@ -1532,11 +1562,20 @@ class Wizard:
             for widget in container.winfo_children():
                 widget.destroy()
             for i, record in enumerate(rows):
-                frame = ttk.LabelFrame(container, text=f"Record {i + 1}")
-                frame.pack(fill="x", pady=8)
+                frame = ui.card(container, pady=8)
+                header = tk.Frame(frame, bg="#ffffff")
+                header.pack(fill="x", padx=12, pady=(10, 2))
+                ui.badge(header, f"Record {i + 1}", "#6b6b6b").pack(side="left")
+                def remove(index=i):
+                    if messagebox.askyesno(APP_NAME, "Remove this record?", parent=self.app):
+                        rows.pop(index)
+                        self.mark_dirty()
+                        redraw()
+                ui.btn_danger(header, "REMOVE", remove, side="right")
                 fields = record_fields(section, record)
                 for key, label, options in fields:
-                    tk.Label(frame, text=label, anchor="w", wraplength=580).pack(anchor="w", padx=8, pady=(6, 0))
+                    tk.Label(frame, text=label, font=("Helvetica", 9), fg="#2e2e2e", bg="#ffffff",
+                             anchor="w", wraplength=580).pack(anchor="w", padx=12, pady=(6, 0))
                     value = tk.StringVar(value=record.get(key, ""))
                     def update(*_, row=record, name=key, var=value):
                         row[name] = var.get()
@@ -1545,25 +1584,20 @@ class Wizard:
                         self.mark_dirty()
                     value.trace_add("write", update)
                     widget = ttk.Combobox(frame, textvariable=value, values=options) if options else ttk.Entry(frame, textvariable=value)
-                    widget.pack(fill="x", padx=8)
+                    widget.pack(fill="x", padx=12)
                     if key == "directAccess":
                         widget.configure(show="*")
                     # Hold Tk variable alive for the lifetime of the field.
                     widget._folio_variable = value
                     if key in ("scheme", "kind", "mode"):
                         widget.bind("<<ComboboxSelected>>", lambda *_: redraw())
-                def remove(index=i):
-                    if messagebox.askyesno(APP_NAME, "Remove this record?", parent=self.app):
-                        rows.pop(index)
-                        self.mark_dirty()
-                        redraw()
-                ttk.Button(frame, text="Remove record", command=remove).pack(anchor="w", padx=8, pady=8)
+                tk.Frame(frame, bg="#ffffff", height=10).pack()  # bottom breathing room
         def add():
             rows.append({"mode": "Hint only"} if section == "accessRecords" else {})
             self.mark_dirty()
             redraw()
         redraw()
-        ttk.Button(pad, text="+ Add another record", command=add).pack(anchor="w", pady=10)
+        ui.btn_secondary(pad, "+ ADD ANOTHER RECORD", add, anchor="w", pady=10)
 
     def page_custodians(self):
         self.record_page("Lawyers, trustees & backup custodians", "lawyers")
@@ -1597,8 +1631,7 @@ class Wizard:
         self.vaults_box = tk.Frame(pad, bg=PAPER)
         self.vaults_box.pack(fill="x")
         self.draw_vaults()
-        tk.Button(pad, text="+ ADD A VAULT", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2", command=self.begin_vault_intake).pack(anchor="w", pady=10)
+        ui.btn_secondary(pad, "+ ADD A VAULT", self.begin_vault_intake, anchor="w", pady=10)
 
     def begin_vault_intake(self):
         vault = {"intakeId": uuid.uuid4().hex,
@@ -1895,12 +1928,10 @@ class Wizard:
                  font=F_MONO_B, bg="#ffffff", fg=INK, anchor="w").pack(anchor="w", pady=(4, 4))
         for ki, k in enumerate(v.get("keys") or []):
             self.draw_key(kf, k, ki, v)
-        tk.Button(kf, text="+ ADD A KEY", font=("Courier", 9), bg="#ffffff", fg=INK, relief="solid", bd=1,
-                  cursor="hand2",
-                  command=lambda: (v.setdefault("keys", []).append({}), self.mark_dirty(),
-                                   self.draw_vaults())).pack(anchor="w", pady=6)
-        tk.Button(fr, text="REMOVE VAULT", font=("Courier", 8), bg="#ffffff", fg=FLAG, relief="flat",
-                  cursor="hand2", command=lambda i=vi: self.remove_vault(i)).pack(anchor="e", padx=10, pady=(0, 8))
+        ui.btn_secondary(kf, "+ ADD A KEY",
+                         lambda: (v.setdefault("keys", []).append({}), self.mark_dirty(),
+                                  self.draw_vaults()), anchor="w", pady=6)
+        ui.btn_danger(fr, "REMOVE VAULT", lambda i=vi: self.remove_vault(i)).pack(anchor="e", padx=10, pady=(0, 8))
 
     def remove_vault(self, index):
         vault = self.plan["vaults"][index]
@@ -1992,10 +2023,9 @@ class Wizard:
         self.dloc_box = tk.Frame(pad, bg=PAPER)
         self.dloc_box.pack(fill="x")
         self.draw_dlocs()
-        tk.Button(pad, text="+ ADD A COPY LOCATION", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2",
-                  command=lambda: (self.plan["backups"]["descriptorLocations"].append({}),
-                                   self.mark_dirty(), self.draw_dlocs())).pack(anchor="w", pady=8)
+        ui.btn_secondary(pad, "+ ADD A COPY LOCATION",
+                         lambda: (self.plan["backups"]["descriptorLocations"].append({}),
+                                  self.mark_dirty(), self.draw_dlocs()), anchor="w", pady=8)
         self.entry(pad, "Watch-only setup", "backups.watchOnly",
                    "Where the family can SEE the coins without being able to move them.")
         self.entry(pad, "Wallet birthday / rescan height", "backups.rescanHeight",
@@ -2066,18 +2096,29 @@ class Wizard:
         counts = {"critical": 0, "warning": 0, "info": 0}
         for f in findings:
             counts[f["sev"]] += 1
-        tk.Label(pad, text=f"{counts['critical']} CRITICAL · {counts['warning']} WARNINGS · {counts['info']} NOTES",
-                 font=F_MONO_B, bg=PAPER, fg=INK).pack(anchor="w", pady=(0, 10))
         colors = {"critical": FLAG, "warning": "#8a6408", "info": "#6b6b6b"}
+        chips = tk.Frame(pad, bg=PAPER)
+        chips.pack(anchor="w", pady=(0, 12))
+        for sev, word in (("critical", "CRITICAL"), ("warning", "WARNINGS"), ("info", "NOTES")):
+            chip = tk.Frame(chips, bg="#ffffff", highlightthickness=1, highlightbackground=colors[sev])
+            chip.pack(side="left", padx=(0, 8))
+            tk.Label(chip, text=f"{counts[sev]} {word}", font=ui.F_BADGE, fg=colors[sev],
+                     bg="#ffffff", padx=10, pady=4).pack()
+        if not findings:
+            tk.Label(pad, text="No findings — the failure simulator has nothing to flag. Rehearse anyway.",
+                     font=F_BODY, bg=PAPER, fg=OK).pack(anchor="w", pady=6)
         for f in findings:
-            fr = tk.Frame(pad, bg="#ffffff", highlightthickness=2, highlightbackground=colors[f["sev"]])
-            fr.pack(fill="x", pady=3)
-            tk.Label(fr, text=f["sev"].upper(), font=("Courier", 8, "bold"), bg="#ffffff",
+            fr = tk.Frame(pad, bg="#ffffff", highlightthickness=1, highlightbackground=LINE)
+            fr.pack(fill="x", pady=4)
+            tk.Frame(fr, bg=colors[f["sev"]], width=5).pack(side="left", fill="y")
+            inner = tk.Frame(fr, bg="#ffffff")
+            inner.pack(side="left", fill="both", expand=True)
+            tk.Label(inner, text=f["sev"].upper(), font=("Courier", 8, "bold"), bg="#ffffff",
                      fg=colors[f["sev"]]).pack(anchor="w", padx=12, pady=(8, 0))
-            tk.Label(fr, text=f["title"], font=("Helvetica", 11, "bold"), bg="#ffffff", fg=INK,
+            tk.Label(inner, text=f["title"], font=("Helvetica", 11, "bold"), bg="#ffffff", fg=INK,
                      anchor="w", wraplength=600, justify="left").pack(anchor="w", padx=12)
             body = f["detail"] + (("\n→ " + f["fix"]) if f["fix"] else "")
-            tk.Label(fr, text=body, font=("Helvetica", 9), bg="#ffffff", fg="#2e2e2e", anchor="w",
+            tk.Label(inner, text=body, font=("Helvetica", 9), bg="#ffffff", fg="#2e2e2e", anchor="w",
                      wraplength=600, justify="left").pack(anchor="w", padx=12, pady=(2, 10))
         self.text(pad, "Owner notes (encrypted with the plan)", "ownerNotes")
 

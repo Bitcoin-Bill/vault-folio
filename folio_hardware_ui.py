@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import folio_security as security
+import folio_ui as ui
 from folio_storage import save_encrypted
 
 
@@ -88,28 +89,43 @@ def hardware_job(app, operation, on_success, environment_safe, key_labels=None):
 
 
 def add_export_controls(parent, app, plan, environment_safe):
-    frame = ttk.LabelFrame(parent, text="Choose any ways your family can unlock this guide")
-    frame.pack(fill="x", pady=12)
-    tk.Label(frame, justify="left", wraplength=620, text=
+    frame = ui.card(parent, pady=12)
+    inner = tk.Frame(frame, bg="#ffffff")
+    inner.pack(fill="x", padx=14, pady=12)
+    tk.Label(inner, text="CHOOSE ANY WAYS YOUR FAMILY CAN UNLOCK THIS GUIDE",
+             font=ui.F_MONO_B, bg="#ffffff", fg=ui.INK, anchor="w").pack(anchor="w", pady=(0, 6))
+    tk.Label(inner, justify="left", wraplength=600, bg="#ffffff", fg=ui.BODY_TEXT, font=ui.F_BODY, text=
              "Any ONE configured method opens the guide. No combination or quorum is required.\n"
              "Use a passphrase, a YubiKey, family questions, or several independent alternatives.\n"
-             "Method labels and recovery questions are visible before unlocking; keep them non-sensitive.").pack(anchor="w", padx=10, pady=8)
+             "Method labels and recovery questions are visible before unlocking; keep them non-sensitive.").pack(anchor="w", pady=(0, 8))
     rows = []
-    methods_box = tk.Frame(frame)
-    methods_box.pack(fill="x", padx=10)
+    methods_box = tk.Frame(inner, bg="#ffffff")
+    methods_box.pack(fill="x")
 
     def add(kind):
         if len(rows) >= security.MAX_METHODS:
             messagebox.showinfo("Unlock methods", "Up to 12 independent methods are supported.", parent=app)
             return
-        box = ttk.LabelFrame(methods_box, text={"passphrase":"Passphrase", "yubikey":"YubiKey", "questions":"Family questions"}[kind])
-        box.pack(fill="x", pady=8)
+        kind_label = {"passphrase":"PASSPHRASE", "yubikey":"YUBIKEY", "questions":"FAMILY QUESTIONS"}[kind]
+        box = ui.card(methods_box, pady=8)
+        head = tk.Frame(box, bg="#ffffff")
+        head.pack(fill="x", padx=12, pady=(10, 0))
+        ui.badge(head, kind_label, ui.OK).pack(side="left")
         row = {"kind":kind,"box":box,"secrets":[]}
+        def remove():
+            rows.remove(row)
+            for entry in row["secrets"]:entry.delete(0,"end")
+            box.destroy()
+        ui.btn_danger(head, "REMOVE", remove, side="right")
         def field(label, secret=False):
-            tk.Label(box,text=label,anchor="w",wraplength=580).pack(anchor="w",padx=8,pady=(5,0))
+            tk.Label(box,text=label,anchor="w",wraplength=560,font=ui.F_SMALL,
+                     fg=ui.BODY_TEXT,bg="#ffffff").pack(anchor="w",padx=12,pady=(5,0))
             entry=ttk.Entry(box,show="*" if secret else "")
-            entry.pack(fill="x",padx=8)
-            if secret: row["secrets"].append(entry)
+            entry.pack(fill="x",padx=12)
+            if secret:
+                row["secrets"].append(entry)
+                if show_var.get():
+                    entry.configure(show="")
             return entry
         row["label"] = field("Recognizable label (visible before unlock; e.g. Lawyer key)")
         row["label"].insert(0,{"passphrase":"Guide passphrase", "yubikey":"Guide YubiKey", "questions":"Family recovery"}[kind])
@@ -118,29 +134,35 @@ def add_export_controls(parent, app, plan, environment_safe):
             row["confirm"] = field("Confirm passphrase",True)
         elif kind == "yubikey":
             tk.Label(box,text="Preconfigured USB HMAC-SHA1 key with touch enabled. See docs/YUBIKEY.md.\n"
-                     "The app never overwrites device settings.",wraplength=580,justify="left").pack(anchor="w",padx=8,pady=6)
+                     "The app never overwrites device settings.",wraplength=560,justify="left",
+                     font=ui.F_SMALL, fg=ui.BODY_TEXT, bg="#ffffff").pack(anchor="w",padx=12,pady=6)
             row["slot"] = tk.StringVar(value="2")
-            ttk.Combobox(box,textvariable=row["slot"],values=["1","2"],state="readonly").pack(anchor="w",padx=8)
+            ttk.Combobox(box,textvariable=row["slot"],values=["1","2"],state="readonly").pack(anchor="w",padx=12)
         else:
             tk.Label(box,text="Enter 3–5 custom questions. All answers in this set are required.\n"
                      "Avoid public facts: answers are another password and can be guessed offline.\n"
-                     "Answers ignore case and extra whitespace; punctuation still matters.",wraplength=580,justify="left").pack(anchor="w",padx=8,pady=6)
+                     "Answers ignore case and extra whitespace; punctuation still matters.",wraplength=560,justify="left",
+                     font=ui.F_SMALL, fg=ui.BODY_TEXT, bg="#ffffff").pack(anchor="w",padx=12,pady=6)
             row["questions"] = []
             for i in range(5):
                 question=field(f"Question {i+1}" + (" (optional)" if i>=3 else ""))
                 answer=field("Answer",True)
                 confirm=field("Confirm answer",True)
                 row["questions"].append((question,answer,confirm))
-        def remove():
-            rows.remove(row)
-            for entry in row["secrets"]:entry.delete(0,"end")
-            box.destroy()
-        ttk.Button(box,text="Remove this unlock method",command=remove).pack(anchor="w",padx=8,pady=8)
+        tk.Frame(box, bg="#ffffff", height=10).pack()  # bottom breathing room
         rows.append(row)
 
-    buttons=tk.Frame(frame);buttons.pack(fill="x",padx=10,pady=8)
-    for kind,label in [("passphrase","+ Passphrase"),("yubikey","+ YubiKey"),("questions","+ Family questions")]:
-        ttk.Button(buttons,text=label,command=lambda k=kind:add(k)).pack(side="left",padx=3)
+    buttons=tk.Frame(inner, bg="#ffffff");buttons.pack(fill="x",pady=8)
+    for kind,label in [("passphrase","+ PASSPHRASE"),("yubikey","+ YUBIKEY"),("questions","+ FAMILY QUESTIONS")]:
+        ui.btn_secondary(buttons,text=label,command=lambda k=kind:add(k),side="left",padx=(0,6))
+    show_var = tk.BooleanVar(value=False)
+    def toggle_secrets():
+        for row in rows:
+            for entry in row["secrets"]:
+                entry.configure(show="" if show_var.get() else "*")
+    tk.Checkbutton(inner, text="Show passphrases and answers while typing", variable=show_var,
+                   command=toggle_secrets, bg="#ffffff", font=ui.F_SMALL,
+                   activebackground="#ffffff").pack(anchor="w", pady=(0, 4))
     add("passphrase")
 
     def export():
@@ -210,7 +232,7 @@ def add_export_controls(parent, app, plan, environment_safe):
             messagebox.showinfo("Encrypted guide saved","Reopen this saved file and rehearse each intended unlock method with family. "
                 "Keep the previous verified backup until that works. Store a non-secret discovery note outside the guide.",parent=app)
         hardware_job(app,operation,saved,environment_safe,[c["label"] for c in configs if c["kind"]=="yubikey"])
-    ttk.Button(frame,text="SAVE ENCRYPTED GUIDE",command=export).pack(anchor="w",padx=10,pady=14)
+    ui.btn_primary(inner,text="SAVE ENCRYPTED GUIDE",command=export,anchor="w",pady=14)
 
 
 def choose_method(app,env):
