@@ -23,7 +23,7 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
 Requires: Python 3.9+, tkinter, cryptography
 Run:      python3 vault-folio.py          (normal; requires verified RAM-backed session)
-          python3 vault-folio.py --test-only-synthetic-questionnaire (synthetic encrypted save/open; skips environment checks)
+          python3 vault-folio.py --test-session (Tails/test launch: skips the air-gap gate; invented data only)
           python3 vault-folio.py --self-test   (headless crypto/risk check)
 """
 
@@ -359,6 +359,20 @@ def environment_is_safe(report, *, test_mode=False):
     return (report["route"] is False and report["active_network"] == [] and
             report["wifi_present"] == [] and report["wifi_active"] == [] and
             report["bluetooth"] == [] and paths_ok)
+
+
+def disable_networking():
+    """Ask the OS to drop networking. Returns a short result line."""
+    if PLATFORM != "Linux":
+        return "This button only turns networking off on Linux."
+    nm = _run(["nmcli", "networking", "off"], timeout=8.0)
+    if default_route_exists() is True:
+        _run(["pkexec", "ip", "route", "del", "default"], timeout=30.0)
+    if default_route_exists() is False:
+        return "Networking is off and the default route is gone. Checking again."
+    if nm is None:
+        return "Could not turn networking off. The route is still there."
+    return "Asked NetworkManager to stop. The route is still there."
 
 
 GATE_HINT = {
@@ -904,8 +918,7 @@ class App(tk.Tk):
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
         if self.test_mode:
-            # This mode is limited to synthetic questionnaire/UI exploration.
-            # It never opens files or exposes credential/export controls.
+            # Test launch only. Skips the air-gap gate so the interface and encrypted save can be tried.
             self.lift_gate()
             return
         self.clear()
@@ -926,13 +939,27 @@ class App(tk.Tk):
         self.gate_list = tk.Frame(box, bg="#111111")
         self.gate_list.pack(fill="x", padx=36)
         tk.Label(box, font=("Helvetica", 9), fg="#8a8a84", bg="#111111", justify="left", wraplength=580,
-                 text="Remove Wi-Fi and Bluetooth hardware and disconnect all network cables/adapters. "
-                      + GATE_HINT).pack(anchor="w", padx=36, pady=(14, 6))
+                 text="A route can remain after the Wi-Fi card is removed. This screen can turn networking off and check again. "
+                      "It cannot remove Bluetooth hardware or put an installed home folder in RAM.").pack(
+            anchor="w", padx=36, pady=(14, 6))
         btns = tk.Frame(box, bg="#111111")
         btns.pack(anchor="w", padx=36, pady=(6, 30))
-        tk.Button(btns, text="RE-CHECK ENVIRONMENT", font=F_MONO_B, bg=PAPER, fg=INK,
+        tk.Button(btns, text="TURN NETWORKING OFF AND CHECK", font=F_MONO_B, bg=PAPER, fg=INK,
                   relief="flat", padx=16, pady=8, cursor="hand2",
-                  command=self.run_gate).pack(side="left")
+                  command=self.offer_disable_network).pack(side="left")
+        tk.Button(btns, text="CHECK AGAIN", font=F_MONO_B, bg="#111111", fg=PAPER,
+                  relief="flat", padx=16, pady=8, cursor="hand2",
+                  command=self.run_gate).pack(side="left", padx=(8, 0))
+        self.run_gate()
+
+    def offer_disable_network(self):
+        if not messagebox.askokcancel(
+                APP_NAME,
+                "Turn networking off and delete the default route, then check again?\n\n"
+                "This lasts until you turn networking back on. It does not remove Bluetooth hardware "
+                "and does not make a disk-backed home folder RAM-only."):
+            return
+        messagebox.showinfo(APP_NAME, disable_networking())
         self.run_gate()
 
     def _gate_row(self, ok, text):
@@ -2285,7 +2312,8 @@ def main():
         self_test()
         return
     harden_process()  # RAM gate blocks if this cannot be established.
-    test_mode = "--test-only-synthetic-questionnaire" in sys.argv
+    test_mode = any(flag in sys.argv for flag in (
+        "--test-session", "--test-only-synthetic-questionnaire"))
     app = App(test_mode=test_mode)
     app.mainloop()
 
