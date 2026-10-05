@@ -1,11 +1,15 @@
 # Linux and Browser Test Guide
 
-This guide covers two separate ways to try Vault Folio:
+**Vault Folio is an offline desktop application, not an HTML program.** The real application runs locally on a supported Linux desktop and is intended for offline use under its documented security requirements. See [RAM-SESSION.md](RAM-SESSION.md) for the normal app's nonpersistent live Linux requirements.
 
-1. **HTML model:** a browser demo for viewing and trying the interface with invented data only.
-2. **Linux desktop test build:** the native app build for testing desktop UI and encrypted file save/open workflows.
+The HTML model is a separate browser demo for viewing and trying the interface with invented data. It is not the Vault Folio desktop application and does not provide its offline or environment-security protections. Never enter sensitive information in the HTML demo. The Linux desktop test build also has a test launch that bypasses the air-gap lock; use invented test data with that build too.
 
-Neither route is an audited production release. Do not enter sensitive or real inheritance information in either test build.
+This guide covers the two distinct options:
+
+1. **HTML model:** browser-only demonstration and interface testing with invented data.
+2. **Linux desktop test build:** native app testing, including the encrypted file save/open workflow.
+
+Neither test route is an audited production release. Do not enter real inheritance information in either.
 
 ## HTML model: browser demo only
 
