@@ -737,7 +737,6 @@ def canvas_quorum(cv, v, vi):
         n, m = len(keys), 0
     if n <= 0:
         return
-    n = min(n, 30)
     while len(keys) < n:
         keys.append({})
     width, x, cardw = 900, 18, 864
@@ -761,12 +760,18 @@ def canvas_quorum(cv, v, vi):
                (f"ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE" if m else "KEY DETAILS TO BE CONFIRMED"))
     y = 16
     cv.delete("all")
-    cv.create_text(x, y, anchor="w", text=title, width=cardw, font=title_font, fill=INK)
-    cv.create_text(width-x, y, anchor="e", text=q, width=cardw//2, font=title_font, fill=FLAG)
-    y += 32
-    cap, _ = wrap(caption)
-    cv.create_text(x, y, anchor="w", text=cap, width=cardw, font=body_font, fill=DIM)
-    y += 38
+    line_height = max(22, size + 12)
+    title_text, title_lines = wrap(title)
+    cv.create_text(x, y, anchor="nw", text=title_text, width=cardw,
+                   font=title_font, fill=INK)
+    y += title_lines * line_height + 6
+    quorum_text, quorum_lines = wrap(q)
+    cv.create_text(x, y, anchor="nw", text=quorum_text, width=cardw,
+                   font=title_font, fill=FLAG)
+    y += quorum_lines * line_height + 6
+    cap, cap_lines = wrap(caption)
+    cv.create_text(x, y, anchor="nw", text=cap, width=cardw, font=body_font, fill=DIM)
+    y += cap_lines * line_height + 8
     cv.create_line(x, y, width-x, y, fill=INK)
     y += 10
     for i, key in enumerate(keys[:n]):
@@ -790,18 +795,19 @@ def canvas_quorum(cv, v, vi):
             cv.create_text(x+12, ty, anchor="nw", text=val, width=cardw-24, font=font, fill=color)
             ty += count * line_height + 4
         y += bh + 10
-    cv.configure(width=width, height=min(y+8, 680), scrollregion=(0, 0, width, y+8))
+    cv.configure(width=width, height=y+8, scrollregion=(0, 0, width, y+8))
 
-def canvas_family_map(cv, plan):
+def canvas_family_map(cv, plan, vault_index=0, include_footer=True):
     """One-column clickable map for setup, signers, people, and numbered steps."""
     people = plan.get("people") or {}
-    vault = (plan.get("vaults") or [{}])[0]
+    vaults = plan.get("vaults") or [{}]
+    vault = vaults[vault_index]
     keys = list(vault.get("keys") or [])
     try:
         n = int(vault.get("n") or len(keys) or 1)
     except (TypeError, ValueError):
         n = len(keys) or 1
-    n = max(1, min(n, 30))
+    n = max(1, n)
     m = vault.get("m") or ""
     while len(keys) < n:
         keys.append({})
@@ -854,7 +860,7 @@ def canvas_family_map(cv, plan):
     rule = f"{m}-of-{n}" if m else (vault.get("setupType") or f"{n} keys")
     setup_title = str(vault.get("name") or "Unnamed setup")
     cv.create_rectangle(x, y, x + cardw, y + 76, fill=WHITE, outline=INK, tags=("setup",))
-    cv.create_text(x + 14, y + 22, anchor="w", text="SETUP · " + wrapped(setup_title, 58),
+    cv.create_text(x + 14, y + 22, anchor="w", text=f"SETUP {vault_index + 1} · " + wrapped(setup_title, 58),
                    width=cardw - 28, font=themes.F("Courier", 11, "bold"), fill=INK, tags=("setup",))
     cv.create_text(x + 14, y + 56, anchor="w", text=str(rule).upper() + " · click a card",
                    width=cardw - 28, font=themes.F("Courier", 9, "bold"), fill=FLAG, tags=("setup",))
@@ -879,36 +885,37 @@ def canvas_family_map(cv, plan):
                               ("Place", p), ("Device", k.get("device") or "Not recorded")]))
         y += 114
 
-    people_cards = [("FIRST CONTACT", people.get("executor") or "Not named"),
-                    ("INSTRUCTIONS HOLDER", people.get("trustee") or "Not named")]
-    heirs = [str(row.get("name") or "").strip() for row in people.get("heirs") or []]
-    people_cards.extend(("HEIR", name) for name in heirs if name)
-    if not any(heirs):
-        people_cards.append(("HEIR", "Not named"))
-    lawyers = [str(row.get("name") or row.get("firm") or "").strip() for row in plan.get("lawyers") or []]
-    people_cards.extend(("LAWYER", name) for name in lawyers if name)
-    if not any(lawyers):
-        people_cards.append(("LAWYER", "Not named"))
-    cv.create_text(x, y + 12, anchor="w", text="PEOPLE", font=themes.F("Courier", 10, "bold"), fill=HINT)
-    y += 28
-    for i, (label, value) in enumerate(people_cards):
-        tag = f"person{i}"
-        cv.create_rectangle(x, y, x + cardw, y + 64, fill=WHITE, outline=INK, tags=(tag,))
-        cv.create_text(x + 14, y + 30, anchor="w", text=label + ": " + wrapped(value, 64),
-                       width=cardw - 28, font=themes.F("Helvetica", 10, "bold"), fill=INK, tags=(tag,))
-        cv.tag_bind(tag, "<Button-1>", lambda _e, title=label, who=value: show_tree_detail(title, [("Name", who)]))
-        y += 72
+    if include_footer:
+        people_cards = [("FIRST CONTACT", people.get("executor") or "Not named"),
+                        ("INSTRUCTIONS HOLDER", people.get("trustee") or "Not named")]
+        heirs = [str(row.get("name") or "").strip() for row in people.get("heirs") or []]
+        people_cards.extend(("HEIR", name) for name in heirs if name)
+        if not any(heirs):
+            people_cards.append(("HEIR", "Not named"))
+        lawyers = [str(row.get("name") or row.get("firm") or "").strip() for row in plan.get("lawyers") or []]
+        people_cards.extend(("LAWYER", name) for name in lawyers if name)
+        if not any(lawyers):
+            people_cards.append(("LAWYER", "Not named"))
+        cv.create_text(x, y + 12, anchor="w", text="PEOPLE", font=themes.F("Courier", 10, "bold"), fill=HINT)
+        y += 28
+        for i, (label, value) in enumerate(people_cards):
+            tag = f"person{i}"
+            cv.create_rectangle(x, y, x + cardw, y + 64, fill=WHITE, outline=INK, tags=(tag,))
+            cv.create_text(x + 14, y + 30, anchor="w", text=label + ": " + wrapped(value, 64),
+                           width=cardw - 28, font=themes.F("Helvetica", 10, "bold"), fill=INK, tags=(tag,))
+            cv.tag_bind(tag, "<Button-1>", lambda _e, title=label, who=value: show_tree_detail(title, [("Name", who)]))
+            y += 72
 
-    cv.create_text(x, y + 12, anchor="w", text="NUMBERED GUIDE STEPS",
-                   font=themes.F("Courier", 10, "bold"), fill=HINT)
-    y += 28
-    for number, title, detail in heir_steps_for(plan):
-        cv.create_rectangle(x, y, x + cardw, y + 76, fill=WHITE, outline=LINE)
-        cv.create_text(x + 14, y + 21, anchor="w", text=f"{number} · {wrapped(title, 66)}",
-                       width=cardw - 28, font=themes.F("Courier", 9, "bold"), fill=INK)
-        cv.create_text(x + 14, y + 50, anchor="w", text=wrapped(detail, 78),
-                       width=cardw - 28, font=themes.F("Helvetica", 9), fill=INK)
-        y += 84
+        cv.create_text(x, y + 12, anchor="w", text="NUMBERED GUIDE STEPS",
+                       font=themes.F("Courier", 10, "bold"), fill=HINT)
+        y += 28
+        for number, title, detail in heir_steps_for(plan):
+            cv.create_rectangle(x, y, x + cardw, y + 76, fill=WHITE, outline=LINE)
+            cv.create_text(x + 14, y + 21, anchor="w", text=f"{number} · {wrapped(title, 66)}",
+                           width=cardw - 28, font=themes.F("Courier", 9, "bold"), fill=INK)
+            cv.create_text(x + 14, y + 50, anchor="w", text=wrapped(detail, 78),
+                           width=cardw - 28, font=themes.F("Helvetica", 9), fill=INK)
+            y += 84
     cv.configure(width=width, height=min(680, max(400, y + 16)), bg=PAPER,
                  highlightthickness=0, scrollregion=(0, 0, width, y + 16))
     cv.tag_bind("setup", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
@@ -917,29 +924,32 @@ def canvas_family_map(cv, plan):
 
 
 def heir_steps_for(plan):
-    """Build concise heir steps from names and locations already in the guide."""
+    """Build numbered heir steps covering every setup in the guide."""
     people = plan.get("people") or {}
-    vault = (plan.get("vaults") or [{}])[0]
     contact = people.get("executor") or "the first contact named in the guide"
     where = (plan.get("inheritance") or {}).get("letterLocation") or "the place named for the sealed guide"
-    rule = f"{vault.get('m')} of {vault.get('n')}" if vault.get("m") and vault.get("n") else (vault.get("setupType") or "the recorded rule")
-    vault_name = str(vault.get("name") or "").strip()
-    if vault_name:
-        rule = f"{vault_name}: {rule}"
-    keys = vault.get("keys") or []
-    labels = [str(key.get("label") or "").strip() for key in keys]
-    labels = [label for label in labels if label]
-    places = [str(key.get("locations") or "").strip() for key in keys]
-    places = [place for place in places if place]
-    named_keys = ", ".join(labels) or "the signer labels in the guide"
-    named_places = ", ".join(dict.fromkeys(places)) or "the places named on each key"
+    setups, all_labels, all_places = [], [], []
+    for index, vault in enumerate(plan.get("vaults") or []):
+        name = str(vault.get("name") or f"Setup {index + 1}").strip()
+        rule = f"{vault.get('m')} of {vault.get('n')}" if vault.get("m") and vault.get("n") else (vault.get("setupType") or "the recorded rule")
+        labels = [str(key.get("label") or "").strip() for key in vault.get("keys") or []]
+        labels = [label for label in labels if label]
+        places = [str(key.get("locations") or "").strip() for key in vault.get("keys") or []]
+        places = [place for place in places if place]
+        setups.append(f"{name}: {rule}")
+        all_labels.extend(f"{name} — {label}" for label in labels)
+        all_places.extend(places)
     return [
         ("1", "Read this first", "This guide has no seed and cannot spend bitcoin."),
         ("2", "Contact " + contact, "Use a route the family already knows."),
         ("3", "Find the guide", where),
-        ("4", "Follow " + str(rule), "Required signer labels: " + named_keys + ". Copies of one key still count as one key."),
-        ("5", "Collect backups", "Use the recorded locations: " + named_places + ". Do not gather every secret on one computer."),
+        ("4", "Follow the recorded setups", "; ".join(setups) or "No setup was recorded."),
+        ("5", "Collect backups", "Required signer labels: " +
+         (", ".join(all_labels) or "the signer labels in the guide") +
+         ". Recorded places: " + (", ".join(dict.fromkeys(all_places)) or "the places named on each key") +
+         ". Do not gather every secret on one computer."),
     ]
+
 
 
 def show_tree_detail(title, rows):
@@ -1407,20 +1417,31 @@ def open_choice(app, plan):
 
 def show_heir(app, plan):
     def draw_diagrams(box, current_plan):
-        tk.Label(box, text="ONE-PAGE FAMILY MAP · CLICK SETUP, KEY, OR PERSON CARDS",
+        tk.Label(box, text="FAMILY MAP · CLICK SETUP, KEY, OR PERSON CARDS",
                  font=themes.F("Courier", 9), bg=PAPER, fg=HINT).pack(anchor="w", pady=(0, 6))
-        family_map = tk.Frame(box, bg=PAPER)
-        family_map.pack(fill="both", expand=True)
-        cv = tk.Canvas(family_map, bg=PAPER, highlightthickness=0)
-        ybar = tk.Scrollbar(family_map, orient="vertical", command=cv.yview)
-        xbar = tk.Scrollbar(family_map, orient="horizontal", command=cv.xview)
-        cv.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
-        canvas_family_map(cv, current_plan)
-        cv.grid(row=0, column=0, sticky="nsew")
-        ybar.grid(row=0, column=1, sticky="ns")
-        xbar.grid(row=1, column=0, sticky="ew")
-        family_map.rowconfigure(0, weight=1)
-        family_map.columnconfigure(0, weight=1)
+        vaults = [(i, v) for i, v in enumerate(current_plan.get("vaults") or [])
+                  if v.get("keys") or v.get("n")]
+        if not vaults:
+            vaults = [(0, {})]
+        for position, (index, vault) in enumerate(vaults):
+            group = tk.Frame(box, bg=PAPER)
+            group.pack(fill="x", expand=True, pady=(0, 10))
+            title = vault.get("name") or f"Setup {index + 1}"
+            tk.Label(group, text=title, font=themes.F("Courier", 10, "bold"),
+                     bg=PAPER, fg=INK).pack(anchor="w")
+            family_map = tk.Frame(group, bg=PAPER)
+            family_map.pack(fill="both", expand=True)
+            cv = tk.Canvas(family_map, bg=PAPER, highlightthickness=0)
+            ybar = tk.Scrollbar(family_map, orient="vertical", command=cv.yview)
+            xbar = tk.Scrollbar(family_map, orient="horizontal", command=cv.xview)
+            cv.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+            canvas_family_map(cv, current_plan, index,
+                              include_footer=(position == len(vaults) - 1))
+            cv.grid(row=0, column=0, sticky="nsew")
+            ybar.grid(row=0, column=1, sticky="ns")
+            xbar.grid(row=1, column=0, sticky="ew")
+            family_map.rowconfigure(0, weight=1)
+            family_map.columnconfigure(0, weight=1)
     show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams)
 
 
