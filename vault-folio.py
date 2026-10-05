@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VAULT FOLIO — cross-platform offline edition
+VAULT FOLIO — offline desktop edition
 ============================================
 An offline plan-authoring tool for Bitcoin cold storage and inheritance.
 
@@ -11,21 +11,17 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
   - Local Python modules, standard-library GUI (tkinter). No browser engine, no web
     storage, no cookies, no caches — nothing persists in the background.
-  - Runs on Linux, macOS, and Windows. The air-gap gate fails closed unless
-    the OS reports no network route, no active network interface, and no Wi-Fi
-    or Bluetooth hardware.
-  - RAM discipline: the app writes NOTHING to disk on its own — no temp
-    files, no logs, no bytecode cache. The only writes are files YOU choose
-    in a Save dialog. For a fully ephemeral session, run it from a live
-    Linux USB with persistence disabled, or copy the app and companion modules onto a
-    ramdisk and run it from there.
+  - Real guide creation/viewing requires a supported live Linux session with
+    the RAM, swap, process, and air-gap checks satisfied. Other OSes are not
+    supported for real guide data.
+  - The app does not persist plaintext plans or write logs/bytecode. Encrypted
+    saves use a temporary ciphertext sibling for atomic replacement.
   - Encryption: AES-256-GCM, key via PBKDF2-HMAC-SHA256 (600,000 rounds).
     Only external dependency: the `cryptography` package.
   - The encrypted JSON format is documented independently so other offline
     applications can read the plan in the future.
 
-Requires: Python 3.9+, tkinter (python3-tk / included on macOS+Windows),
-          cryptography  (pip install cryptography)
+Requires: Python 3.9+, tkinter, cryptography
 Run:      python3 vault-folio.py          (normal; requires verified RAM-backed session)
           python3 vault-folio.py --test-only-synthetic-questionnaire (no checks or file access)
           python3 vault-folio.py --self-test   (headless crypto/risk check)
@@ -41,6 +37,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import uuid
 from datetime import date
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -527,6 +524,12 @@ def recovery_routes(v):
     return [list(route) for route in islice(combinations(keys, m), 10)]
 
 
+def _short(value, limit):
+    """Shorten untrusted plan text for compact diagram labels."""
+    value = str(value or "")
+    return value if len(value) <= limit else value[:max(0, limit - 1)] + "…"
+
+
 
 # --------------------------------------------------------------------------
 # Recovery-guide text, rendered inside the desktop app after decryption
@@ -540,8 +543,6 @@ def build_runbook_text(p):
     a(f"Plan:     {p['meta'].get('planName') or '—'}")
     a(f"Owner:    {p['meta'].get('owner') or '—'}")
     a(f"Prepared: {p['meta'].get('created') or '—'}")
-    a(f"Jurisdiction: {p['meta'].get('jurisdiction') or 'Not recorded'}")
-    a(f"Legal notes: {p['meta'].get('legalNotes') or 'Not recorded'}")
     a(f"Jurisdiction: {p['meta'].get('jurisdiction') or 'Not recorded'}")
     a(f"Legal notes: {p['meta'].get('legalNotes') or 'Not recorded'}")
     a("")
@@ -687,8 +688,6 @@ def build_runbook_text(p):
         reh.append("Family walkthrough: " + p["rehearsal"]["familyWalkthrough"])
     if p["rehearsal"].get("testSpendDate"):
         reh.append("Last test spend: " + p["rehearsal"]["testSpendDate"])
-    if p["rehearsal"].get("notes"):
-        a("Rehearsal notes: " + p["rehearsal"]["notes"])
     if reh:
         a("Rehearsal status: " + " · ".join(reh))
     if p["rehearsal"].get("notes"):
@@ -727,11 +726,15 @@ def canvas_quorum(cv, v, vi):
     title = f"VAULT {vi + 1}" + (f" — {v.get('name')}" if v.get("name") else "")
     cv.create_text(mx, 24, anchor="w", text=_short(title, 46),
                    font=("Courier", 10, "bold"), fill="#0a0a0a")
-    q = f"{m}-OF-{n} MULTISIG" if m else f"{n} KEYS"
+    is_single = v.get("setupType") == "single" or (m == 1 and n == 1)
+    q = "SINGLE SIGNATURE" if is_single else (f"{m}-OF-{n} MULTISIG" if m else f"{n} KEYS")
     cv.create_text(w - mx, 24, anchor="e", text=q, font=("Courier", 9, "bold"), fill="#b3282d")
-    if m:
-        cv.create_text(w / 2, 46, text=f"ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE",
-                       font=("Courier", 7), fill="#555555")
+    if is_single:
+        caption = "ONE SIGNING KEY AUTHORIZES A SPEND; COPIES ARE BACKUPS, NOT EXTRA KEYS"
+    else:
+        caption = f"ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE" if m else "KEY DETAILS TO BE CONFIRMED"
+    if is_single or m:
+        cv.create_text(w / 2, 46, text=caption, font=("Courier", 7), fill="#555555")
         cv.create_line(mx, 53, w - mx, 53, fill="#0a0a0a")
     for i in range(n):
         r, c = divmod(i, per_row)
@@ -1082,7 +1085,7 @@ def home_screen(app):
          "DISABLED IN TEST MODE" if app.test_mode else "OPEN PLAN FILE (.CSP)",
          lambda: open_file_flow(app), True, enabled=not app.test_mode)
     mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new plan",
-         "A guided nine-folio questionnaire ending in an automated risk review and the encrypted "
+         "A guided, step-by-step questionnaire ending in an automated risk review and the encrypted "
          ".csp file. The only export is encrypted." if not app.test_mode else
          "Explore the questionnaire with synthetic answers. Test mode never opens or saves guide files.",
          "START TEST QUESTIONNAIRE" if app.test_mode else "START A NEW PLAN",
@@ -1235,7 +1238,7 @@ class Wizard:
         self.sidebar = tk.Frame(shell, bg=PAPER2, highlightthickness=1, highlightbackground=LINE)
         self.sidebar.pack(side="left", fill="y")
         for i, (_, title) in enumerate(STEP_DEFS):
-            b = tk.Button(self.sidebar, text=f"{i:02d}  {title}", font=("Courier", 9), anchor="w",
+            b = tk.Button(self.sidebar, text=f"{i + 1:02d}  {title}", font=("Courier", 9), anchor="w",
                           relief="flat", padx=14, pady=8, cursor="hand2", bg=PAPER2, fg="#6b6b6b",
                           activebackground=INK, activeforeground=PAPER,
                           command=lambda n=i: self.goto(n))
@@ -1249,8 +1252,9 @@ class Wizard:
 
         nav = tk.Frame(right, bg=PAPER, highlightthickness=1, highlightbackground=LINE)
         nav.pack(fill="x")
-        tk.Button(nav, text="← BACK / EXIT", font=F_MONO, bg=PAPER, fg=INK, relief="flat",
-                  padx=14, pady=8, cursor="hand2", command=self.back).pack(side="left", padx=8, pady=6)
+        self.back_btn = tk.Button(nav, text="← BACK / EXIT", font=F_MONO, bg=PAPER, fg=INK, relief="flat",
+                                  padx=14, pady=8, cursor="hand2", command=self.back)
+        self.back_btn.pack(side="left", padx=8, pady=6)
         self.pos_lbl = tk.Label(nav, text="", font=("Courier", 9), bg=PAPER, fg="#6b6b6b")
         self.pos_lbl.pack(side="left", expand=True)
         self.next_btn = tk.Button(nav, text="CONTINUE →", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
@@ -1367,14 +1371,15 @@ class Wizard:
                            wraplength=620, command=toggle).pack(anchor="w")
 
     # ---- page scaffolding -------------------------------------------------
-    def page(self, folio, title, intro=""):
+    def page(self, title, intro=""):
         c = self.content.inner
         for w in c.winfo_children():
             w.destroy()
         for i, b in enumerate(self.step_buttons):
             b.configure(bg=(INK if i == self.step else PAPER2),
                         fg=(PAPER if i == self.step else "#6b6b6b"))
-        self.pos_lbl.configure(text=f"FOLIO {self.step:02d} / {len(STEP_DEFS)-1:02d}")
+        self.pos_lbl.configure(text=f"SECTION {self.step + 1} OF {len(STEP_DEFS)}")
+        self.back_btn.configure(text="← BACK / EXIT")
         self.next_btn.configure(text=("DONE" if self.step == len(STEP_DEFS)-1 else "CONTINUE →"))
         pad = tk.Frame(c, bg=PAPER)
         pad.pack(fill="both", expand=True, padx=44, pady=28)
@@ -1403,7 +1408,7 @@ class Wizard:
 
     # ---- folio 00 ---------------------------------------------------------
     def page_start(self):
-        pad = self.page("Folio · 00 · Before anything", "Ground rules")
+        pad = self.page("Ground rules")
         rules = [
             "I will enter structural descriptions and storage locations only — no seeds, keys, seed passphrases, xpubs, or wallet descriptors",
             "I am using a machine with no Wi-Fi or Bluetooth hardware and no network connection",
@@ -1432,7 +1437,7 @@ class Wizard:
 
     # ---- folio 01 ---------------------------------------------------------
     def page_identity(self):
-        pad = self.page("Folio · 01 · The plan", "Plan & owner", STEP_INTROS["identity"])
+        pad = self.page("Plan & owner", STEP_INTROS["identity"])
         self.entry(pad, "Plan name", "meta.planName", "Something your executor would recognize.")
         self.entry(pad, "Owner", "meta.owner")
         self.entry(pad, "Date prepared", "meta.created")
@@ -1443,7 +1448,7 @@ class Wizard:
 
     # ---- folio 02 ---------------------------------------------------------
     def page_people(self):
-        pad = self.page("Folio · 02 · The people", "Executors, trustees, heirs", STEP_INTROS["people"])
+        pad = self.page("Executors, trustees, heirs", STEP_INTROS["people"])
         self.entry(pad, "Executor / next of kin", "people.executor",
                    "Finds the plan and starts the process. Need not be technical.")
         self.entry(pad, "Trustee / guardian of the map", "people.trustee",
@@ -1506,7 +1511,7 @@ class Wizard:
         self.draw_heirs()
 
     def record_page(self, title, section):
-        pad = self.page("Family recovery details", title,
+        pad = self.page(title,
                         "Add as many records as needed. Use recognizable aliases and clues; exact locations are optional. "
                         "Use hints by default. Optional direct access details belong only in the dedicated access section. "
                         "Never enter Bitcoin seed words or private keys.")
@@ -1577,7 +1582,7 @@ class Wizard:
 
     # ---- folio 03: vaults (nested keys) -----------------------------------
     def page_vaults(self):
-        pad = self.page("Folio · 03 · The vaults", "Vault architecture & keys", STEP_INTROS["vaults"])
+        pad = self.page("Vault architecture & keys", STEP_INTROS["vaults"])
         if self.vault_intake is not None:
             self.render_vault_intake(pad)
             return
@@ -1596,7 +1601,8 @@ class Wizard:
                   cursor="hand2", command=self.begin_vault_intake).pack(anchor="w", pady=10)
 
     def begin_vault_intake(self):
-        vault = {"name": "New wallet setup", "m": "", "n": "", "script": "Not sure yet",
+        vault = {"intakeId": uuid.uuid4().hex,
+                 "name": "New wallet setup", "m": "", "n": "", "script": "Not sure yet",
                  "coordinator": "", "timelock": {"enabled": False, "delay": ""}, "keys": [],
                  "intakeAnswers": {}}
         self.plan["vaults"].append(vault)
@@ -1659,29 +1665,37 @@ class Wizard:
         questions = self.vault_intake_questions()
         idx = min(self.vault_intake["index"], len(questions) - 1)
         key, title, help_text, kind, options = questions[idx]
-        self.pos_lbl.configure(text=f"WALLET SETUP · QUESTION {idx + 1}")
-        self.next_btn.configure(text=("ADD THIS WALLET →" if idx == len(questions) - 1 else "NEXT QUESTION →"))
-        tk.Label(pad, text=f"WALLET SETUP · QUESTION {idx + 1}", font=F_MONO_B,
-                 bg=PAPER, fg=OK).pack(anchor="w", pady=(4, 10))
-        tk.Label(pad, text=title, font=F_H2, bg=PAPER, fg=INK, anchor="w", justify="left",
-                 wraplength=640).pack(anchor="w", pady=(2, 8))
-        tk.Label(pad, text=help_text, font=F_BODY, bg=PAPER, fg="#2e2e2e", anchor="w", justify="left",
-                 wraplength=640).pack(anchor="w", pady=(0, 18))
+        self.pos_lbl.configure(text=f"WALLET QUESTION {idx + 1} OF {len(questions)}")
+        self.back_btn.configure(text=("← PREVIOUS QUESTION" if idx else "← CANCEL WALLET"))
+        self.next_btn.configure(text=("ADD WALLET TO PLAN →" if idx == len(questions) - 1 else "NEXT QUESTION →"))
+        card = tk.Frame(pad, bg="#ffffff", highlightthickness=1, highlightbackground=LINE)
+        card.pack(fill="x", pady=(8, 12))
+        tk.Label(card, text=f"QUESTION {idx + 1} OF {len(questions)}", font=F_MONO_B,
+                 bg="#ffffff", fg=OK).pack(anchor="w", padx=20, pady=(18, 8))
+        bar = tk.Frame(card, bg=LINE, height=5)
+        bar.pack(fill="x", padx=20, pady=(0, 14))
+        tk.Frame(bar, bg=OK).place(relx=0, rely=0, relwidth=(idx + 1) / len(questions), relheight=1)
+        tk.Label(card, text=title, font=F_H2, bg="#ffffff", fg=INK, anchor="w", justify="left",
+                 wraplength=640).pack(anchor="w", padx=20, pady=(2, 8))
+        tk.Label(card, text=help_text, font=F_BODY, bg="#ffffff", fg="#2e2e2e", anchor="w", justify="left",
+                 wraplength=640).pack(anchor="w", padx=20, pady=(0, 18))
         self.intake_value = tk.StringVar(value=str(self.vault_intake["answers"].get(key, "")))
         if kind == "choice":
             for value, label in options:
-                tk.Radiobutton(pad, text=label, value=value, variable=self.intake_value,
-                               font=F_BODY, bg=PAPER, activebackground=PAPER, selectcolor="#ffffff",
-                               anchor="w", justify="left", wraplength=620).pack(anchor="w", pady=5)
+                tk.Radiobutton(card, text=label, value=value, variable=self.intake_value,
+                               font=F_BODY, bg="#ffffff", activebackground="#ffffff", selectcolor=PAPER2,
+                               anchor="w", justify="left", wraplength=620).pack(anchor="w", padx=20, pady=6)
         else:
-            tk.Entry(pad, textvariable=self.intake_value, font=F_BODY, bg="#ffffff", fg=INK,
-                     relief="solid", bd=1).pack(fill="x", pady=4)
+            answer_entry = tk.Entry(card, textvariable=self.intake_value, font=F_BODY, bg="#ffffff", fg=INK,
+                                    relief="solid", bd=1)
+            answer_entry.pack(fill="x", padx=20, pady=(0, 8))
+            answer_entry.bind("<Return>", lambda _event: (self.advance_vault_intake(), "break")[1])
             if kind == "number":
-                tk.Radiobutton(pad, text="I’m not sure", value="unsure", variable=self.intake_value,
-                               font=F_BODY, bg=PAPER, activebackground=PAPER, selectcolor="#ffffff",
-                               anchor="w").pack(anchor="w", pady=8)
+                tk.Radiobutton(card, text="I’m not sure", value="unsure", variable=self.intake_value,
+                               font=F_BODY, bg="#ffffff", activebackground="#ffffff", selectcolor=PAPER2,
+                               anchor="w").pack(anchor="w", padx=20, pady=(0, 16))
         vault = self.vault_intake["vault"]
-        summary = tk.LabelFrame(pad, text="  WALLET FOLIO SO FAR  ", font=F_MONO,
+        summary = tk.LabelFrame(pad, text="  YOUR WALLET SUMMARY  ", font=F_MONO,
                                 bg="#ffffff", fg=INK, relief="solid", bd=1)
         summary.pack(fill="x", pady=(22, 4))
         setup_label = {"single": "Single-signature", "multi": "Multisignature",
@@ -1738,7 +1752,8 @@ class Wizard:
         vault["name"] = answers.get("name") or "New wallet setup"
         vault["coordinator"] = answers.get("coordinator", "")
         vault["intakeAnswers"] = answers
-        vault["setupType"] = resolved or "unknown"
+        resolved = resolved if resolved in ("single", "multi") else "unknown"
+        vault["setupType"] = resolved
         if resolved == "single":
             vault.update({"m": 1, "n": 1, "script": "Single-signature (one key)"})
             if not vault.get("keys"):
@@ -1769,11 +1784,18 @@ class Wizard:
             if answers.get("delayed_path") == "yes":
                 mechanism = {"provider": "Provider-enforced off-chain delay",
                              "onchain": "Bitcoin on-chain relative timelock"}.get(answers.get("delayed_kind"))
+                path = {"label": f"{vault['name']} delayed route", "vault": vault["name"],
+                        "sourceVaultId": vault["intakeId"]}
                 if mechanism:
-                    path = {"label": f"{vault['name']} delayed route", "mechanism": mechanism}
+                    path["mechanism"] = mechanism
                     if answers.get("delay"):
                         path["delay"] = answers["delay"]
-                    self.plan["recoveryPaths"].append(path)
+                else:
+                    path["mechanism"] = "Other / custom"
+                    path["dependencies"] = (
+                        "A delayed spending route was reported, but its mechanism is unknown. "
+                        "Confirm whether it is on-chain or provider-controlled. This guide does not enforce a release date.")
+                self.plan["recoveryPaths"].append(path)
             self.vault_intake = None
             for button in self.step_buttons:
                 button.configure(state="normal")
@@ -1878,9 +1900,20 @@ class Wizard:
                   command=lambda: (v.setdefault("keys", []).append({}), self.mark_dirty(),
                                    self.draw_vaults())).pack(anchor="w", pady=6)
         tk.Button(fr, text="REMOVE VAULT", font=("Courier", 8), bg="#ffffff", fg=FLAG, relief="flat",
-                  cursor="hand2",
-                  command=lambda: (self.plan["vaults"].pop(vi), self.mark_dirty(),
-                                   self.draw_vaults())).pack(anchor="e", padx=10, pady=(0, 8))
+                  cursor="hand2", command=lambda i=vi: self.remove_vault(i)).pack(anchor="e", padx=10, pady=(0, 8))
+
+    def remove_vault(self, index):
+        vault = self.plan["vaults"][index]
+        if not messagebox.askyesno(APP_NAME, f"Remove {vault.get('name') or 'this wallet'} and its linked intake-created recovery path?",
+                                   parent=self.app):
+            return
+        source_id = vault.get("intakeId")
+        self.plan["vaults"].pop(index)
+        if source_id:
+            self.plan["recoveryPaths"] = [row for row in self.plan["recoveryPaths"]
+                                           if row.get("sourceVaultId") != source_id]
+        self.mark_dirty()
+        self.draw_vaults()
 
     def _set_timelock(self, v, val):
         v["timelock"] = {"enabled": val == "yes", "delay": (v.get("timelock") or {}).get("delay", "")}
@@ -1936,7 +1969,7 @@ class Wizard:
 
     # ---- folio 04 ---------------------------------------------------------
     def page_signing(self):
-        pad = self.page("Folio · 04 · Signing", "How spending works", STEP_INTROS["signing"])
+        pad = self.page("How spending works", STEP_INTROS["signing"])
         self.combo(pad, "How does the unsigned PSBT cross the air gap?", "signing.medium",
                    ["QR codes (UR / animated)", "SD card", "USB stick (last resort)", "Not decided"],
                    "QR is slower than a cable — that is the point. USB is a tunnel.")
@@ -1950,7 +1983,7 @@ class Wizard:
 
     # ---- folio 05 ---------------------------------------------------------
     def page_backups(self):
-        pad = self.page("Folio · 05 · The map", "Descriptor & configuration backups", STEP_INTROS["backups"])
+        pad = self.page("Descriptor & configuration backups", STEP_INTROS["backups"])
         tk.Label(pad, text="DESCRIPTOR / WALLET-CONFIGURATION COPIES", font=F_MONO_B, bg=PAPER, fg=INK).pack(anchor="w")
         tk.Label(pad, text="For multisignature and timed policies, this copy may be essential to rebuild the wallet. "
                            "For a simple single-key setup, follow its tested restore instructions and record any "
@@ -2000,7 +2033,7 @@ class Wizard:
 
     # ---- folio 06 ---------------------------------------------------------
     def page_inheritance(self):
-        pad = self.page("Folio · 06 · Succession", "Inheritance mechanism", STEP_INTROS["inheritance"])
+        pad = self.page("Inheritance mechanism", STEP_INTROS["inheritance"])
         self.combo(pad, "Primary inheritance mechanism", "inheritance.mechanism", MECHANISMS)
         self.text(pad, "Release conditions — when and how heirs gain access", "inheritance.releaseConditions",
                   "e.g. Trustee releases sealed key B on presentation of death certificate; timelocked path "
@@ -2017,7 +2050,7 @@ class Wizard:
 
     # ---- folio 07 ---------------------------------------------------------
     def page_rehearsal(self):
-        pad = self.page("Folio · 07 · Rehearsal", "Has it actually been tested?", STEP_INTROS["rehearsal"])
+        pad = self.page("Has it actually been tested?", STEP_INTROS["rehearsal"])
         self.combo(pad, "Restore drill: one key restored from its physical backup onto a blank signer?",
                    "rehearsal.restoreDrill", YESNO3)
         self.combo(pad, "Family walkthrough: has the spouse/heir opened these instructions and found the "
@@ -2028,7 +2061,7 @@ class Wizard:
 
     # ---- folio 08: review -------------------------------------------------
     def page_review(self):
-        pad = self.page("Folio · 08 · Examination", "Risk review", STEP_INTROS["review"])
+        pad = self.page("Risk review", STEP_INTROS["review"])
         findings = analyze_plan(self.plan)
         counts = {"critical": 0, "warning": 0, "info": 0}
         for f in findings:
@@ -2050,7 +2083,7 @@ class Wizard:
 
     # ---- folio 09: export -------------------------------------------------
     def page_export(self):
-        pad = self.page("Folio · 09 · Sealing the file", "Encrypt & export the inheritance file")
+        pad = self.page("Encrypt & export the inheritance file")
         if self.app.test_mode:
             tk.Label(pad, text="TEST MODE — EXPORT DISABLED", font=F_MONO_B,
                      bg="#ffe0dc", fg=FLAG, padx=12, pady=10).pack(anchor="w", fill="x", pady=12)
@@ -2067,7 +2100,7 @@ class Wizard:
 
         # --- preview: the pictures the family will see ---------------------
         if self.plan["vaults"]:
-            tk.Label(pad, text="THE PICTURES THE FAMILY WILL SEE", font=F_MONO_B,
+            tk.Label(pad, text="SETUP DIAGRAM PREVIEW · CHECK THIS AGAINST YOUR WALLET", font=F_MONO_B,
                      bg=PAPER, fg=INK).pack(anchor="w", pady=(20, 6))
             for vi, v in enumerate(self.plan["vaults"]):
                 cv = tk.Canvas(pad, bg=PAPER, highlightthickness=0)
@@ -2085,7 +2118,8 @@ class Wizard:
                      "In at least one geographically separate location"]:
             tk.Label(pad, text="□  " + item, font=F_BODY, bg=PAPER, fg=INK, anchor="w").pack(anchor="w", pady=2)
         tk.Label(pad, text="To update the plan later: reopen this app, open your encrypted file, edit, and "
-                           "export a fresh sealed copy. Nothing is stored on disk by the app itself.",
+                           "export a fresh sealed copy. Saving briefly creates an encrypted temporary sibling "
+                           "beside the chosen file for atomic replacement.",
                  font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER, justify="left", wraplength=620).pack(anchor="w", pady=14)
 
 
@@ -2133,7 +2167,7 @@ def self_test():
     assert "READ FIRST" in rb
     print("Vault Folio self-test: OK")
     print("  crypto:  AES-256-GCM + PBKDF2-SHA-256(600k) roundtrip, wrong-key and tamper rejected")
-    print("  logic:   risk engine, recovery routes, text runbook + in-app diagrams")
+    print("  logic:   risk engine, recovery routes, text runbook (GUI diagrams are not exercised here)")
 
 
 def main():
@@ -2141,8 +2175,7 @@ def main():
         self_test()
         return
     harden_process()  # RAM gate blocks if this cannot be established.
-    test_mode = ("--test-only-synthetic-questionnaire" in sys.argv or
-                 "--test-only-skip-ram-path-check" in sys.argv)
+    test_mode = "--test-only-synthetic-questionnaire" in sys.argv
     app = App(test_mode=test_mode)
     app.mainloop()
 

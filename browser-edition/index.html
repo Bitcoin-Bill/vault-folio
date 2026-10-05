@@ -281,7 +281,7 @@ function blankPlan(){
 // key: {label, device, generation, media, locations, passphrase}
 
 const TIERS = ['Deep vault (no timelock)','Family vault (timelocked decay allowed)','Spending / liquidity wallet','Collaborative custody slice'];
-const SCRIPTS = ['P2WSH — wsh(sortedmulti(...))','Taproot / Miniscript (Liana-style leaves)','Single-sig (small amounts only)','Not sure yet'];
+const SCRIPTS = ['P2WSH — wsh(sortedmulti(...))','Taproot / Miniscript (Liana-style leaves)','Single-signature (one key)','Not sure yet'];
 const COORDS = ['Bitcoin Core (Yeti-style)','Sparrow Wallet','Nunchuk','Liana','Casa','Unchained','Specter','Electrum','Caravan','Other / undecided'];
 const DEVICES = ['SeedSigner (stateless QR)','Krux (stateless QR)','Jade (stateless mode)','BitBox02-class (secure element)','Air-gapped laptop + Bitcoin Core','COLDCARD (see warning)','Trezor / other','Undecided',"COLDCARD Q / Mk4","Trezor","Ledger","BitBox02","Foundation Passport","Keystone","Jade","SeedSigner","Krux","Specter DIY","TAPSIGNER","Air-gapped Bitcoin Core","Other / custom"];
 const GENMETHODS = ['Dice / coins / cards + offline calculator (EntropyLab)','Device RNG (device-generated)','Bitcoin Core wallet generation','Imported existing seed','Undecided'];
@@ -981,7 +981,7 @@ function renderHome(){
   const m2=el('div',{class:'mode'},
     el('div',{class:'folio'},'Mode · 02 · Owner'),
     el('h3',{},'Create a new plan'),
-    el('p',{},'A guided nine-folio questionnaire covering vaults, keys, backups, signing, inheritance, and rehearsal — ending in an automated risk review and the encrypted .csp file. The only export is encrypted.'),
+    el('p',{},'A guided questionnaire covering vaults, keys, backups, signing, inheritance, and rehearsal — ending in an automated risk review and the encrypted .csp file. The only export is encrypted.'),
     el('button',{class:'btn ghost',onclick:()=>{S.mode='wizard';S.step=0;S.plan=blankPlan();S.dirty=false;renderWizard();}},'Start a new plan'));
   modes.append(m1,m2);
   m.append(modes);
@@ -1310,7 +1310,7 @@ function renderPresetPicker(host){
     const p=PROFILES[Number(picker.value)];
     S.plan.vaults.push({name:p.name,m:p.m,n:p.n,coordinator:p.coordinator,notes:p.note,
       profileSource:p.source,profileReviewed:'2026-10-04',
-      script:p.timelock?'Taproot / Miniscript (Liana-style leaves)':p.n===1?'Single-sig (small amounts only)':'P2WSH — wsh(sortedmulti(...))',
+      script:p.timelock?'Taproot / Miniscript (Liana-style leaves)':p.n===1?'Single-signature (one key)':'P2WSH — wsh(sortedmulti(...))',
       timelock:{enabled:!!p.timelock,delay:''},keys:[]});
     markDirty();renderWizard();
   }},'Add vault from preset'));
@@ -1332,4 +1332,3 @@ runGate();
 </script>
 </body>
 </html>
-
