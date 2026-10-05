@@ -20,7 +20,7 @@ def rejects_secret(text):
     if not raw:
         return False
     low = re.sub(r"[_-]+", " ", raw.casefold())
-    if re.search(r"\b(?:seed(?:\s+(?:phrase|words?))?|private\s+key|secret\s+key|xprv|xpub|recovery\s+(?:phrase|words?))\b", low):
+    if re.search(r"\b(?:seed\s+(?:phrase|words?)|private\s+key|secret\s+key|xprv|xpub|recovery\s+(?:phrase|words?))\b", low):
         return True
     words = [word.strip(".,;:").lower() for word in raw.split()]
     return 12 <= len(words) <= 24 and all(word.isalpha() and len(word) <= 10 for word in words)

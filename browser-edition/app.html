@@ -57,7 +57,7 @@
       ["heir","Who else should be named?","Leave blank if there is no one else."],
       ["tested","Has anyone restored this without you?","An untested backup is only a story.","choice",[["yes","Yes"],["no","Not yet"],["unsure","I'm not sure"]]]
     ];
-    function seedish(v){ const t=(v||"").toLowerCase(); if(/seed|private key|xprv|xpub|recovery phrase/.test(t)) return true; const w=t.split(/\s+/).filter(Boolean); return w.length>=12 && w.length<=24 && w.every(x=>/^[a-z]+$/.test(x)); }
+    function seedish(v){ const t=(v||"").toLowerCase().replace(/[_-]+/g," "); if(/\b(?:seed\s+(?:phrase|words?)|private\s+key|secret\s+key|xprv|xpub|recovery\s+(?:phrase|words?))\b/.test(t)) return true; const w=t.split(/\s+/).filter(Boolean); return w.length>=12 && w.length<=24 && w.every(x=>/^[a-z]+$/.test(x)); }
     function esc(v){ return String(v||"").replace(/[&<>"]/g,c=>({"&":"&","<":"<",">":">",'"':"""}[c])); }
     function help(text){ alert(text+"\n\nDo not enter a seed, key, or private detail."); }
     function field(key,label,hint){ return `<label>${label} <button type="button" onclick="help('${hint.replace(/'/g,"")}')">?</button></label><input id="${key}" value="${esc(plan[key])}">`; }

@@ -39,9 +39,11 @@ class Phase1Test(unittest.TestCase):
     def test_seed_list_is_refused(self):
         self.assertTrue(rejects_secret("abandon ability able about above absent absorb abstract absurd abuse access accident"))
         self.assertFalse(rejects_secret("bank box"))
+        self.assertFalse(rejects_secret("SeedSigner"))
+        self.assertFalse(rejects_secret("seed signer"))
 
     def test_explicit_seed_and_key_labels_are_refused(self):
-        for text in ("seed: example", "seed_words are here", "private-key text", "recovery words here"):
+        for text in ("seed phrase here", "seed_words are here", "private-key text", "recovery words here"):
             with self.subTest(text=text):
                 self.assertTrue(rejects_secret(text))
 

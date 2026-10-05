@@ -42,8 +42,8 @@
       { key: "contact", text: "Who should the family contact first?", help: "A person or role. They are not asked for a key.", type: "text" }
     ];
     function seedish(value) {
-      const text = (value || "").toLowerCase();
-      if (/seed|private key|xprv|xpub|recovery phrase/.test(text)) return true;
+      const text = (value || "").toLowerCase().replace(/[_-]+/g, " ");
+      if (/\b(?:seed\s+(?:phrase|words?)|private\s+key|secret\s+key|xprv|xpub|recovery\s+(?:phrase|words?))\b/.test(text)) return true;
       const words = text.split(/\s+/).filter(Boolean);
       return words.length >= 12 && words.length <= 24 && words.every(w => /^[a-z]+$/.test(w));
     }
