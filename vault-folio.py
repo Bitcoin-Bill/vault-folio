@@ -60,6 +60,7 @@ except ImportError:
 
 from folio_hardware_ui import add_export_controls, open_hardware
 from folio_security import MAGIC as HARDWARE_MAGIC
+from folio_phase1 import start_phase1
 
 APP_NAME = "Vault Folio"
 VERSION = "2.1-guide-preview"
@@ -1085,11 +1086,11 @@ def home_screen(app):
          "DISABLED IN TEST MODE" if app.test_mode else "OPEN PLAN FILE (.CSP)",
          lambda: open_file_flow(app), True, enabled=not app.test_mode)
     mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new plan",
-         "A guided, step-by-step questionnaire ending in an automated risk review and the encrypted "
-         ".csp file. The only export is encrypted." if not app.test_mode else
+         "A short setup interview fills the plan. You then edit the full layout. "
+         "It never asks for a seed or a key." if not app.test_mode else
          "Explore the questionnaire with synthetic answers. Test mode never opens or saves guide files.",
-         "START TEST QUESTIONNAIRE" if app.test_mode else "START A NEW PLAN",
-         lambda: start_wizard(app, blank_plan()), False)
+         "START TEST QUESTIONNAIRE" if app.test_mode else "START SETUP INTERVIEW",
+         lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)), False)
 
     tk.Label(pad, text="WHAT THE FILE CONTAINS — AND WHAT IT NEVER CONTAINS", font=F_MONO_B,
              bg=PAPER, fg=INK).pack(anchor="w", pady=(14, 6))
