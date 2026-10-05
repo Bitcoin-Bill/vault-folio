@@ -1,33 +1,18 @@
-# Linux and Browser Test Guide
+# Linux and browser test guide
 
-**Vault Folio is an offline desktop application, not an HTML program.** The real application runs locally on a supported Linux desktop and is intended for offline use under its documented security requirements. See [RAM-SESSION.md](RAM-SESSION.md) for the normal app's nonpersistent live Linux requirements.
+Vault Folio is an offline desktop application. The real guide is `vault-folio.py`. It is meant for an air-gapped machine. A normal launch stays locked unless Linux reports no default route, no active network interface, and no Wi-Fi or Bluetooth hardware.
 
-The HTML model is a separate browser demo for viewing and trying the interface with invented data. It is not the Vault Folio desktop application and does not provide its offline or environment-security protections. Never enter sensitive information in the HTML demo. The Linux desktop test build also has a test launch that bypasses the air-gap lock; use invented test data with that build too.
+The browser page is a public preview of the flow. It is already in this repo at `browser-edition/app.html`. It is not the desktop app. It does not check the machine, and it does not write a desktop Vault Folio file. Never enter a seed phrase, a private key, a real passphrase, or a private plan there. A device name such as SeedSigner is fine.
 
-This guide covers the two distinct options:
+Neither path is a certified release. Use invented answers.
 
-1. **HTML model:** browser-only demonstration and interface testing with invented data.
-2. **Linux desktop test build:** native app testing, including the encrypted file save/open workflow.
+## Browser preview
 
-Neither test route is an audited production release. Do not enter real inheritance information in either.
+Open `browser-edition/app.html` in a browser. The warning stays at the top. The page walks the interview, the sheets, a risk note, a passphrase window, and a short heir view.
 
-## HTML model: browser demo only
+## Ubuntu 26.04 test package
 
-Grok is preparing a fuller HTML model so people can try the working interface in a browser. It is being developed for demonstration and test purposes. It is not the security-enforcing desktop app and cannot verify that Wi-Fi, Bluetooth, Ethernet, tethering, or other network paths are physically disabled. A browser also cannot guarantee RAM-only operation, prevent system/browser logging or screenshots, or ensure that data is not persisted by the operating system.
-
-Use only invented sample answers and a new test-only passphrase. Never enter seed words, private keys, wallet descriptors, seed passphrases, recovery-share words, real names or contact information, exact storage locations, real family answers, or any other sensitive details. Treat any exported test file as disposable. Wait for the HTML build's own README and disclaimer before relying on its exact save/export behavior.
-
-The existing browser-edition/index.html is an earlier companion prototype. It has browser-based encryption experiments, but it cannot enforce the native desktop security checks. It is not evidence that Grok's in-progress HTML model is ready or that any browser build is safe for real plans.
-
-## Linux desktop test build
-
-The reviewed archive csip-ubuntu-offline.zip is targeted at **Ubuntu 26.04, amd64, Python 3.14**. It contains the Python app and modules, test files, an installer, and Tkinter-related .deb packages. It is a target-specific experimental package, not a universal Linux build.
-
-The archive's launcher uses **--ubuntu-test**, which bypasses the air-gap lock. Use invented data and a new test-only passphrase. This test mode is for trying the native interface and encrypted save/open flow; it does not establish RAM-only operation or protection from persistent storage.
-
-### Package contents and known dependency gap
-
-The archive includes:
+`csip-ubuntu-offline.zip` is for Ubuntu 26.04, amd64, Python 3.14. It is not a package for every Linux machine. The laptop it was built for is air-gapped, so the zip includes the window library and its related packages:
 
 - python3.14-tk
 - libtcl8.6
@@ -36,51 +21,23 @@ The archive includes:
 - libxft2
 - libxrender1
 
-The application also imports Python cryptography, but the archive does not bundle its package. Check whether it is already available on the target before launching. The installer uses sudo dpkg -i on the included packages; it is not a complete dependency resolver.
+It does not include the Python cryptography package. That package was already installed on the tested laptop. If a machine does not already have it, the app cannot seal a file until a matching offline package is added to the zip. Do not tell that laptop to run apt update or pip.
 
-### Try the Ubuntu archive
+The launcher uses `--ubuntu-test`. That skips the air-gap lock so the full guide and encrypted save can be tried. It does not make the machine an offline session. Use invented answers and a new test passphrase.
 
-1. Extract the ZIP to a new folder.
-2. Check the target OS, architecture, and Python:
-   cat /etc/os-release
-   dpkg --print-architecture
-   python3 --version
-   This archive is for Ubuntu 26.04 amd64 with Python 3.14. Stop if those do not match.
-3. Check the crypto module:
-   python3 -c 'import cryptography; print(cryptography.__version__)'
-   If missing, prepare a matching offline package for this exact OS and Python target before continuing.
-4. Run bash INSTALL-OFFLINE.sh. It requests administrator access to install its included Tkinter packages and then starts the test app.
-5. Use only synthetic invented data. Test saving an encrypted file, closing the app, and reopening that test file.
+1. Unzip the archive into a new folder.
+2. Confirm Ubuntu 26.04, amd64, and Python 3.14.
+3. Run `bash INSTALL-OFFLINE.sh`.
+4. Save an encrypted test file, quit, and open it again.
 
-Never enter a real plan, seed words, private keys, wallet descriptors, seed passphrases, recovery words, contact data, or a reused/real passphrase.
+## From source
 
-## Ubuntu releases and Debian
+On a Linux desktop that already has Tk and cryptography:
 
-A .deb package set is specific to its distribution release, architecture, and often Python ABI. Do not mix Ubuntu and Debian packages or assume one release's packages work on another.
-
-To prepare an offline bundle, use a connected preparation machine or matching official installation media to collect the target distribution's Python runtime, Tkinter module, Tcl/Tk libraries, cryptography package, and all transitive dependencies from the target's signed package sources. Transfer the complete package set by removable media. Validate package signatures/checksums and dependency closure before delivery; do not rely on dpkg -i output alone.
-
-Required runtime pieces:
-
-- Python 3.9+ compatible with the source
-- matching Tkinter module and Tcl/Tk shared libraries
-- Python cryptography and its runtime dependencies
-- working graphical desktop
-
-Verify after installation:
-
-python3 -c 'import tkinter, cryptography; print("Tk", tkinter.TkVersion, "cryptography", cryptography.__version__)'
-
-Create separate packages such as ubuntu-<release>-<arch> and debian-<release>-<arch>. Each should include a package manifest, SHA-256 checksums, source commit, install/launch scripts, target OS/Python details, and a clean-machine test record. The Ubuntu archive inspected here does not provide Debian compatibility.
-
-## Build and test from source
-
-On a matching Linux desktop with dependencies already installed:
-
+```bash
 python3 -m unittest discover -s tests -v
 python3 vault-folio.py --self-test
-python3 vault-folio.py --test-only-synthetic-questionnaire
+python3 vault-folio.py --ubuntu-test
+```
 
-The last command skips all environment checks and permits synthetic UI/save/open testing. Use invented data and a new test-only passphrase. It does not prove offline operation, RAM-only execution, swap status, or protection from persistent storage.
-
-For the native app's intended security model, see RAM-SESSION.md and OPERATIONAL-SECURITY.md. Normal plan work requires a trusted nonpersistent live Linux environment. This test guide does not relax those requirements or certify a distribution, browser, package set, or machine.
+`--ubuntu-test` skips the air-gap lock and keeps the normal encrypted save. `--test-only-synthetic-questionnaire` skips the lock and writes only a marked synthetic file. A normal launch still belongs on a nonpersistent live Linux session with networking actually off. See `docs/RAM-SESSION.md`.
