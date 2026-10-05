@@ -1,5 +1,9 @@
 # CSIP — Cold Storage Inheritance Package
 
+For the temporary Ubuntu questionnaire demo flag and its strict limitations,
+see `AIRGAP-TRANSFER-README.txt`. That mode skips RAM-path verification and is
+only for synthetic questionnaire exploration; it disables file open and export.
+
 **Vault Folio** is an offline plan-authoring tool for Bitcoin cold storage and
 inheritance. It walks you through documenting *how* your cold storage is built —
 the quorum, the keys, the backups, the signing procedure, the inheritance path —
@@ -172,4 +176,3 @@ custodian. An untested backup is a story — rehearse before it matters.
 ## License
 
 MIT — see [LICENSE](LICENSE).
-

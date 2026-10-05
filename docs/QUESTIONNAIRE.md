@@ -15,6 +15,20 @@ owner-authored content but should not be used to bypass this separation.
 
 ## Dynamic records
 
+## Guided wallet interview
+
+When a plan has no wallet records, the desktop editor starts a one-question-at-a-time
+interview. It begins by asking whether one key or several separate keys are needed
+to spend. Single-signature plans skip the multisignature quorum questions; a
+multisignature plan asks for the total keys and required threshold. “I’m not sure”
+is an accepted answer and does not create guessed signing rules. Follow-up questions
+about a delayed recovery route appear only when the owner reports one. The screen
+shows a running summary while answers build the wallet record in memory.
+
+After the interview, the full folio is available for inspection and editing. The
+interview is a guided starting point, not a wallet-policy analyzer: verify every
+answer against the actual wallet and rehearse recovery before relying on the guide.
+
 - **Lawyers and custodians:** add any number of contacts, their role, known contact
   channel, jurisdiction, what access they actually hold, related vault/key labels,
   agreed release conditions, required-document hints, successors, and review dates.

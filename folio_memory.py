@@ -61,7 +61,7 @@ def ram_backed(path, mount_reader=mount_for, depth=0):
     return False
 
 
-def memory_report():
+def memory_report(*, test_only_skip_path_check=False):
     if platform.system() != 'Linux':
         return {'safe': False, 'detail': 'RAM-only mode requires a nonpersistent live Linux session.'}
     try:
@@ -75,6 +75,9 @@ def memory_report():
         for name in ('XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR'):
             if os.environ.get(name):
                 paths.append(os.environ[name])
+        if test_only_skip_path_check:
+            return {'safe': True, 'path_check_skipped': True,
+                    'detail': 'TEST MODE ONLY: RAM-backed path check skipped; do not enter real plan data.'}
         if not all(ram_backed(path) for path in paths):
             return {'safe': False, 'detail': 'Writable system/home/temp paths are not verifiably RAM-backed. Boot nonpersistent live Linux.'}
         return {'safe': True, 'detail': 'RAM-backed system paths, no active swap, process dumps disabled (OS-reported).'}

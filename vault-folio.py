@@ -26,7 +26,8 @@ keys, seeds, xprvs, or xpubs-by-value — it stores the map, not the treasure.
 
 Requires: Python 3.9+, tkinter (python3-tk / included on macOS+Windows),
           cryptography  (pip install cryptography)
-Run:      python3 vault-folio.py          (normal)
+Run:      python3 vault-folio.py          (normal; requires verified RAM-backed session)
+          python3 vault-folio.py --test-only-synthetic-questionnaire (no checks or file access)
           python3 vault-folio.py --self-test   (headless crypto/risk check)
 """
 
@@ -76,7 +77,7 @@ MAX_PLAN_BYTES = 10 * 1024 * 1024
 TIERS = ["Deep vault (no timelock)", "Family vault (timelocked decay allowed)",
          "Spending / liquidity wallet", "Collaborative custody slice"]
 SCRIPTS = ["P2WSH — wsh(sortedmulti(...))", "Taproot / Miniscript (Liana-style leaves)",
-           "Single-sig (small amounts only)", "Not sure yet"]
+           "Single-signature (one key)", "Not sure yet"]
 COORDS = ["Bitcoin Core (Yeti-style)", "Sparrow Wallet", "Nunchuk", "Liana",
           "Casa", "Unchained", "Specter", "Electrum", "Caravan", "Other / undecided"]
 DEVICES = ["SeedSigner (stateless QR)", "Krux (stateless QR)", "Jade (stateless mode)",
@@ -337,7 +338,7 @@ def bluetooth_adapters():
     return None
 
 
-def environment_report():
+def environment_report(*, test_mode=False):
     """Return local hardware/link findings; unavailable checks fail closed."""
     wifi_present, wifi_active = wireless_interfaces()
     bt = bluetooth_adapters()
@@ -347,15 +348,17 @@ def environment_report():
         "active_network": active_network_interfaces(),
         "wifi_present": wifi_present, "wifi_active": wifi_active,
         "bluetooth": bt,
-        "memory": memory_report(),
+        "memory": memory_report(test_only_skip_path_check=test_mode),
     }
 
 
-def environment_is_safe(report):
+def environment_is_safe(report, *, test_mode=False):
     """Only a complete, clean local report permits use; unknown means blocked."""
+    paths_ok = (report.get("memory", {}).get("safe") is True and
+                (not report.get("memory", {}).get("path_check_skipped") or test_mode))
     return (report["route"] is False and report["active_network"] == [] and
             report["wifi_present"] == [] and report["wifi_active"] == [] and
-            report["bluetooth"] == [] and report.get("memory", {}).get("safe") is True)
+            report["bluetooth"] == [] and paths_ok)
 
 
 GATE_HINT = {
@@ -405,7 +408,9 @@ def analyze_plan(p):
             if k.get("passphrase") == "Memory only (dangerous)":
                 any_pass_memory = True
             for loc in [s.strip() for s in (k.get("locations") or "").split(";") if s.strip()]:
-                locs.setdefault(loc.lower(), []).append({"vault": vn, "m": int(v.get("m") or 1), "kn": kn})
+                threshold = v.get("m")
+                if type(threshold) is int and threshold >= 1:
+                    locs.setdefault(loc.lower(), []).append({"vault": vn, "m": threshold, "kn": kn})
 
     for loc, holders in locs.items():
         by_vault = {}
@@ -435,14 +440,24 @@ def analyze_plan(p):
             "Write it down, store it apart from the words, and give the trustee a sealed copy.")
 
     dlocs = p["backups"].get("descriptorLocations") or []
-    if not dlocs:
-        add("critical", "No descriptor / wallet-configuration backup recorded",
-            "Multisig seeds alone do not reconstruct the wallet. Without the descriptor, heirs may hold the keys and still be unable to recover.",
-            "Add descriptor copies: one with every key backup, one with the trustee, one on the watch-only machine.")
-    elif len(dlocs) < 2:
-        add("warning", "Only one descriptor copy recorded",
-            "The map is as load-bearing as the keys. One copy is one failure away from an unrecoverable quorum.",
-            "Distribute at least 2–3 copies across the same sites as the key backups.")
+    needs_wallet_config = any(
+        v.get("setupType") == "multi" or int(v.get("n") or 0) > 1 or
+        (v.get("timelock") or {}).get("enabled")
+        for v in p["vaults"]
+    )
+    setup_unknown = any(v.get("setupType") == "unknown" for v in p["vaults"])
+    if not dlocs and needs_wallet_config:
+        add("critical", "No wallet-configuration copy recorded",
+            "A multisignature or timed policy can require its descriptor or configuration to rebuild the watch-only wallet and spending policy.",
+            "Record tested configuration-copy locations and instructions, then rehearse a restore.")
+    elif len(dlocs) == 1 and needs_wallet_config:
+        add("warning", "Only one wallet-configuration copy recorded",
+            "This copy may be essential to reconstruct the documented multisignature or timed policy.",
+            "Record an independent copy and rehearse recovery from it.")
+    elif not dlocs and setup_unknown:
+        add("info", "Wallet setup is not identified",
+            "The plan cannot tell whether a descriptor or wallet-configuration copy is needed for recovery.",
+            "Confirm the signing setup and record the recovery material the tested procedure requires.")
     if not p["backups"].get("rescanHeight"):
         add("info", "No wallet birthday / rescan height recorded",
             "A restorer who starts from the wrong height may conclude the coins are gone.",
@@ -553,6 +568,15 @@ def build_runbook_text(p):
         a("  No vaults documented.")
     for i, v in enumerate(p["vaults"]):
         a(f"  VAULT: {v.get('name') or ('Vault %d' % (i+1))}")
+        setup_label = {"single": "Single-signature (one signing key)",
+                       "multi": "Multisignature (several separate signing keys)",
+                       "unknown": "Signing setup not yet identified"}.get(v.get("setupType"))
+        if setup_label:
+            a(f"    Signing setup: {setup_label}")
+        if v.get("backupCopyArrangement"):
+            copies = {"one": "One known backup location", "several": "Copies in more than one place",
+                      "unsure": "Backup-copy arrangement not yet known"}.get(v["backupCopyArrangement"], "Not recorded")
+            a(f"    Copies of the same key backup: {copies}")
         if v.get("tier"):
             a(f"    Purpose:     {v['tier']}")
         if v.get("m") and v.get("n"):
@@ -582,10 +606,16 @@ def build_runbook_text(p):
             for c in routes[:10]:
                 a("      " + "  +  ".join(f"{k['name']} ({k['where']})" for k in c))
         a("")
-    a("3 · THE MAP (WALLET DESCRIPTOR)")
+    needs_wallet_config = any(v.get("setupType") == "multi" or int(v.get("n") or 0) > 1 or
+                              (v.get("timelock") or {}).get("enabled") for v in p["vaults"])
+    a("3 · WALLET CONFIGURATION & ADDRESS CHECKS")
     a("-" * 72)
-    a("The descriptor reconstructs the wallet: script type, cosigner public keys,")
-    a("threshold, timelocks. Seeds alone are NOT enough for a multisig. Copies live at:")
+    if needs_wallet_config:
+        a("This setup may require its descriptor/configuration to rebuild the wallet")
+        a("and spending policy. Seeds alone are NOT enough for multisig. Copies live at:")
+    else:
+        a("Use the tested wallet restore instructions for this setup. A configuration copy")
+        a("may help; descriptors are essential for multisig and some complex policies. Copies, if recorded:")
     dlocs = p["backups"].get("descriptorLocations") or []
     if dlocs:
         for d in dlocs:
@@ -616,14 +646,16 @@ def build_runbook_text(p):
     a("-" * 72)
     a("Generic PSBT flow — adapt to the coordinator named above. The technical")
     a("helper must verify the actual policy, eligible path and current software before starting.")
+    restore_step = ("Locate a descriptor/configuration copy. Import it into the named coordinator (or a verified compatible tool) "
+                    "to rebuild the watch-only wallet. Rescan from the recorded height, then check a known receiving address."
+                    if needs_wallet_config else
+                    "Follow the recorded wallet-specific restore instructions. If a configuration copy is listed, use a verified compatible tool. "
+                    "Rescan from the recorded height and check a known receiving address.")
     steps = [
         "Gather the required number of keys for the quorum — each from its own "
         "location, ideally with the people named above. Never enter seeds into a "
         "website or give them to anyone who contacts you.",
-        "Locate a descriptor copy. Import it into the named coordinator (or Bitcoin "
-        "Core / Sparrow as a fallback) to build a watch-only wallet. Rescan from the "
-        "recorded height. Confirm the balance and that a recorded receiving address "
-        "belongs to the wallet.",
+        restore_step,
         "Create a SMALL test transaction to a destination the family fully controls. "
         "Cross to the signing device(s) by " + (p["signing"].get("medium") or "the recorded method") + ".",
         "On each signer: verify destination, amount, and fee on the device screen. "
@@ -789,7 +821,7 @@ def folio_label(parent, text):
 
 
 class App(tk.Tk):
-    def __init__(self):
+    def __init__(self, *, test_mode=False):
         super().__init__()
         self.title(f"{APP_NAME} — Cold Storage Plan & Inheritance File")
         self.geometry("980x780")
@@ -798,6 +830,7 @@ class App(tk.Tk):
         self.active_plan = None
         self.dirty = False
         self._locked = False
+        self.test_mode = test_mode
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
         self.after(15_000, self._guard_tick)
@@ -809,8 +842,11 @@ class App(tk.Tk):
                 w.destroy()
 
     def clear_session(self):
-        if not messagebox.askyesno(APP_NAME, "Clear this session? Save an encrypted copy first if needed. "
-                                  "Unsaved changes will be lost. This drops app references, not a guaranteed RAM wipe."):
+        prompt = ("Clear this test session? All entered data will be discarded and cannot be saved. "
+                  "This drops app references, not a guaranteed RAM wipe." if self.test_mode else
+                  "Clear this session? Save an encrypted copy first if needed. "
+                  "Unsaved changes will be lost. This drops app references, not a guaranteed RAM wipe.")
+        if not messagebox.askyesno(APP_NAME, prompt):
             return
         discard_plan(self.active_plan)
         self.active_plan = None
@@ -825,6 +861,8 @@ class App(tk.Tk):
         self.destroy()
 
     def header(self, status="OFFLINE / RAM CHECKS PASSED", ok=True):
+        if self.test_mode:
+            status, ok = "TEST ONLY · NO PLAN FILE OPEN/SAVE · RAM PATH CHECK SKIPPED", False
         bar = tk.Frame(self, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         bar.pack(fill="x")
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
@@ -837,6 +875,11 @@ class App(tk.Tk):
 
     # ---- air-gap gate -----------------------------------------------------
     def show_gate(self):
+        if self.test_mode:
+            # This mode is limited to synthetic questionnaire/UI exploration.
+            # It never opens files or exposes credential/export controls.
+            self.lift_gate()
+            return
         self.clear()
         f = tk.Frame(self, bg=INK)
         f.pack(fill="both", expand=True)
@@ -879,7 +922,7 @@ class App(tk.Tk):
         self._gate_row(None, "Reading local network and adapter state…")
         self.update_idletasks()
         # OS checks can take seconds on some platforms — keep the UI alive
-        threading.Thread(target=lambda: self._gate_probe(environment_report()),
+        threading.Thread(target=lambda: self._gate_probe(environment_report(test_mode=self.test_mode)),
                          daemon=True).start()
 
     def _gate_probe(self, rep):
@@ -903,8 +946,9 @@ class App(tk.Tk):
                        "Bluetooth hardware detected or check unavailable.")
 
         memory = rep.get("memory", {})
-        self._gate_row(memory.get("safe") is True, memory.get("detail", "RAM checks unavailable."))
-        safe = environment_is_safe(rep)
+        memory_status = None if memory.get("path_check_skipped") else memory.get("safe") is True
+        self._gate_row(memory_status, memory.get("detail", "RAM checks unavailable."))
+        safe = environment_is_safe(rep, test_mode=self.test_mode)
         if safe:
             self.lift_gate()
 
@@ -913,14 +957,14 @@ class App(tk.Tk):
 
     # ---- mid-session guard ------------------------------------------------
     def _guard_tick(self):
-        if not self._locked:
+        if not self._locked and not self.test_mode:
             threading.Thread(target=self._guard_probe, daemon=True).start()
         self.after(15_000, self._guard_tick)
 
     def _guard_probe(self):
         try:
-            rep = environment_report()
-            safe = environment_is_safe(rep)
+            rep = environment_report(test_mode=self.test_mode)
+            safe = environment_is_safe(rep, test_mode=self.test_mode)
         except Exception:
             safe = False
         self.after(0, lambda: self._apply_guard_result(safe))
@@ -1001,6 +1045,11 @@ def home_screen(app):
     folio_label(pad, "Registry · Cold storage succession · Local network checks active").pack(anchor="w")
     tk.Label(pad, text="The plan is the part that\nhas to survive you.", font=("Georgia", 26),
              bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(8, 16))
+    if app.test_mode:
+        tk.Label(pad, text="TEST MODE — SYNTHETIC DATA ONLY. ENVIRONMENT CHECKS ARE SKIPPED. "
+                 "OPENING AND SAVING PLAN FILES ARE DISABLED. Enter no real inheritance details.",
+                 font=F_MONO_B, bg="#ffe0dc", fg=FLAG, justify="left", wraplength=680,
+                 padx=12, pady=10).pack(fill="x", pady=(0, 14))
     tk.Label(pad, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left", wraplength=680,
              text="Vault Folio walks you through documenting how your Bitcoin cold storage is built — "
                   "the quorum, the keys, the backups, the signing procedure, the inheritance path — then "
@@ -1013,7 +1062,7 @@ def home_screen(app):
     modes = tk.Frame(pad, bg=PAPER)
     modes.pack(fill="x", pady=26)
 
-    def mode(parent, folio, title, desc, btn, cmd, primary):
+    def mode(parent, folio, title, desc, btn, cmd, primary, enabled=True):
         fr = tk.Frame(parent, bg=PAPER, highlightthickness=1, highlightbackground=INK)
         fr.pack(side="left", fill="both", expand=True, padx=(0, 1))
         tk.Label(fr, text=folio.upper(), font=("Courier", 8), fg="#6b6b6b", bg=PAPER).pack(anchor="w", padx=18, pady=(14, 4))
@@ -1023,16 +1072,21 @@ def home_screen(app):
         tk.Button(fr, text=btn, font=F_MONO_B, relief="flat", padx=14, pady=8, cursor="hand2",
                   bg=(INK if primary else PAPER), fg=(PAPER if primary else INK),
                   highlightthickness=1, highlightbackground=INK,
-                  command=cmd).pack(anchor="w", padx=18, pady=(0, 16))
+                  state=("normal" if enabled else "disabled"), command=cmd).pack(
+                      anchor="w", padx=18, pady=(0, 16))
 
-    mode(modes, "Mode · 01 · Open", "Open a cold storage plan file",
+    mode(modes, "Mode · 01 · Open", "Plan file opening disabled" if app.test_mode else "Open a cold storage plan file",
          "Choose a .csp / .json plan file and enter its passphrase. Owners edit and re-seal. "
-         "Family, executors, and counsel get the guided recovery runbook.",
-         "OPEN PLAN FILE (.CSP)", lambda: open_file_flow(app), True)
-    mode(modes, "Mode · 02 · Owner", "Create a new plan",
+         "Family, executors, and counsel get the guided recovery runbook." if not app.test_mode else
+         "Opening files and entering unlock credentials are unavailable in test mode.",
+         "DISABLED IN TEST MODE" if app.test_mode else "OPEN PLAN FILE (.CSP)",
+         lambda: open_file_flow(app), True, enabled=not app.test_mode)
+    mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new plan",
          "A guided nine-folio questionnaire ending in an automated risk review and the encrypted "
-         ".csp file. The only export is encrypted.",
-         "START A NEW PLAN", lambda: start_wizard(app, blank_plan()), False)
+         ".csp file. The only export is encrypted." if not app.test_mode else
+         "Explore the questionnaire with synthetic answers. Test mode never opens or saves guide files.",
+         "START TEST QUESTIONNAIRE" if app.test_mode else "START A NEW PLAN",
+         lambda: start_wizard(app, blank_plan()), False)
 
     tk.Label(pad, text="WHAT THE FILE CONTAINS — AND WHAT IT NEVER CONTAINS", font=F_MONO_B,
              bg=PAPER, fg=INK).pack(anchor="w", pady=(14, 6))
@@ -1051,7 +1105,10 @@ def home_screen(app):
 
 
 def open_file_flow(app):
-    if not environment_is_safe(environment_report()):
+    if app.test_mode:
+        messagebox.showwarning(APP_NAME, "File opening is disabled in test mode. Use synthetic questionnaire data only.")
+        return
+    if not environment_is_safe(environment_report(), test_mode=False):
         messagebox.showerror(APP_NAME, "Offline / RAM-session checks failed. Nothing opened.")
         return
     path = filedialog.askopenfilename(
@@ -1070,7 +1127,7 @@ def open_file_flow(app):
     app.opened_format = env.get("magic") if isinstance(env, dict) else None
     if isinstance(env, dict) and env.get("magic") == HARDWARE_MAGIC:
         open_hardware(app, env, lambda plan: open_choice(app, plan),
-                      lambda: environment_is_safe(environment_report()))
+                      lambda: environment_is_safe(environment_report(), test_mode=False))
         return
     if isinstance(env, dict) and env.get("magic") == ENC_MAGIC:
         pw = simpledialog.askstring(APP_NAME, "This plan file is sealed.\nEnter its passphrase:",
@@ -1083,7 +1140,7 @@ def open_file_flow(app):
             messagebox.showerror(APP_NAME, str(e))
             return
         pw = None  # drop reference
-        if not environment_is_safe(environment_report()):
+        if not environment_is_safe(environment_report(), test_mode=False):
             discard_plan(plan)
             messagebox.showerror(APP_NAME, "Environment became unsafe. Nothing opened.")
             return
@@ -1146,12 +1203,12 @@ STEP_INTROS = {
                 "rebuild or recover it. It must never contain seed words, private keys, or xpubs-by-value.",
     "people": "Who must be able to act when you cannot? Separate technical assistance from financial control: "
               "a helper can guide recovery without holding any key.",
-    "vaults": "Document each vault. For each, record the quorum and every key — its signer, how it was born, "
-              "and where its backups live. Locations are the access control: no single place should hold a quorum.",
+    "vaults": "Describe each wallet in ordinary language first. The guided questions branch for one-key and "
+              "multisignature setups; uncertain rules stay marked unknown. Add signing-device and backup details afterward.",
     "signing": "Record how a transaction is actually signed, so a helper can reproduce it years from now. "
                "The signer is a disposable tool — the procedure is what must survive.",
-    "backups": "Seeds rebuild keys. They do not rebuild the wallet. The output descriptor is the map — store it "
-               "widely; it is privacy-sensitive but not a spending secret.",
+    "backups": "Some setups, especially multisignature and timed policies, need a wallet configuration or output "
+               "descriptor to recover correctly. Record what the tested recovery procedure requires; never type the descriptor here.",
     "inheritance": "Bitcoin cannot read a death certificate. Only two mechanisms release coins: a human holding "
                    "a missing key who agrees to use it, or a timelock that matures. Strong plans use both.",
     "rehearsal": "An untested backup is a story. This log is what turns a document into a plan. "
@@ -1168,6 +1225,7 @@ class Wizard:
         self.app.active_plan = self.plan
         self.step = 0
         self.vars = {}
+        self.vault_intake = None
         app.clear()
         app.header(status="PLAN EDITOR · SAVE ENCRYPTED TO KEEP CHANGES")
 
@@ -1203,10 +1261,25 @@ class Wizard:
 
     # ---- navigation -------------------------------------------------------
     def goto(self, n):
+        if self.vault_intake is not None and n != self.step:
+            return
         self.step = n
         self.render()
 
     def back(self):
+        if STEP_DEFS[self.step][0] == "vaults" and self.vault_intake is not None:
+            if self.vault_intake["index"] > 0:
+                self.vault_intake["index"] -= 1
+                self.render()
+            elif messagebox.askyesno(APP_NAME, "Discard this unfinished wallet interview?"):
+                self.plan["vaults"].remove(self.vault_intake["vault"])
+                self.vault_intake = None
+                for button in self.step_buttons:
+                    button.configure(state="normal")
+                self.mark_dirty()
+                self.step = max(0, self.step - 1)
+                self.render()
+            return
         if self.step == 0:
             if not self.app.dirty or messagebox.askyesno(APP_NAME, "Leave the wizard? Unexported work will be lost."):
                 home_screen(self.app)
@@ -1215,6 +1288,9 @@ class Wizard:
             self.render()
 
     def forward(self):
+        if STEP_DEFS[self.step][0] == "vaults" and self.vault_intake is not None:
+            self.advance_vault_intake()
+            return
         if self.step < len(STEP_DEFS) - 1:
             self.step += 1
             self.render()
@@ -1502,30 +1578,209 @@ class Wizard:
     # ---- folio 03: vaults (nested keys) -----------------------------------
     def page_vaults(self):
         pad = self.page("Folio · 03 · The vaults", "Vault architecture & keys", STEP_INTROS["vaults"])
+        if self.vault_intake is not None:
+            self.render_vault_intake(pad)
+            return
+        if not self.plan["vaults"]:
+            self.begin_vault_intake()
+            return
         self.note(pad, "Rule: never record seed words, xprvs, or full xpub strings here. A key entry describes "
                        "WHICH key it is, WHAT signs with it, and WHERE its backups live — nothing that can spend.")
-        self.note(pad, "Presets are editable documentation starting points, not wallet creation or compatibility guarantees. "
-                       "Catalog reviewed 2026-10-04; verify your exact plan and software. Use Custom for any other arrangement.")
-        preset = tk.StringVar(value=PROFILES[0]["name"])
-        ttk.Combobox(pad, textvariable=preset, values=[x["name"] for x in PROFILES], state="readonly").pack(fill="x")
-        def add_preset():
-            profile = next(x for x in PROFILES if x["name"] == preset.get())
-            self.plan["vaults"].append({"name": profile["name"], "m": profile["m"], "n": profile["n"],
-                "coordinator": profile["coordinator"], "notes": profile["note"],
-                "profileSource": profile["source"], "profileReviewed": "2026-10-04",
-                "script": "Single-sig (small amounts only)" if profile["n"] == 1 and not profile.get("timelock") else
-                          ("Taproot / Miniscript (Liana-style leaves)" if profile.get("timelock") else "P2WSH — wsh(sortedmulti(...))"),
-                "timelock": {"enabled": bool(profile.get("timelock")), "delay": ""}, "keys": []})
-            self.mark_dirty()
-            self.draw_vaults()
-        ttk.Button(pad, text="Add vault from selected preset", command=add_preset).pack(anchor="w", pady=8)
+        self.note(pad, "Start with a guided interview. It asks one question at a time, explains unfamiliar terms, "
+                       "and adds a draft wallet section as you answer. You can inspect and edit the full folio afterward. "
+                       "Choose “I’m not sure” whenever needed; the app will not guess your wallet rules.")
         self.vaults_box = tk.Frame(pad, bg=PAPER)
         self.vaults_box.pack(fill="x")
         self.draw_vaults()
         tk.Button(pad, text="+ ADD A VAULT", font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                  cursor="hand2",
-                  command=lambda: (self.plan["vaults"].append({"timelock": None, "keys": []}),
-                                   self.mark_dirty(), self.draw_vaults())).pack(anchor="w", pady=10)
+                  cursor="hand2", command=self.begin_vault_intake).pack(anchor="w", pady=10)
+
+    def begin_vault_intake(self):
+        vault = {"name": "New wallet setup", "m": "", "n": "", "script": "Not sure yet",
+                 "coordinator": "", "timelock": {"enabled": False, "delay": ""}, "keys": [],
+                 "intakeAnswers": {}}
+        self.plan["vaults"].append(vault)
+        self.vault_intake = {"vault": vault, "answers": vault["intakeAnswers"], "index": 0}
+        for i, button in enumerate(self.step_buttons):
+            button.configure(state=("normal" if i == self.step else "disabled"))
+        self.mark_dirty()
+        self.render()
+
+    def vault_intake_questions(self):
+        a = self.vault_intake["answers"]
+        questions = [
+            ("structure", "How is this wallet set up?",
+             "This means how many separate signing keys are needed to spend. Several copies of one backup are still one key.",
+             "choice", [("single", "One key can authorize a spend (single-signature)"),
+                        ("multi", "Several separate keys are required (multisignature)"),
+                        ("unsure", "I’m not sure")]),
+        ]
+        structure = a.get("structure")
+        if structure == "unsure":
+            questions.append(("structure_detail", "Do you know whether one key or several keys are required?",
+                              "If you cannot tell from your wallet setup, choose “I’m not sure.”", "choice",
+                              [("single", "One key"), ("multi", "Several keys together"),
+                               ("unsure", "I’m not sure")]))
+        resolved = a.get("structure_detail") if structure == "unsure" else structure
+        questions.append(("name", "What name would help your family recognize this wallet?",
+                          "For example, “Household savings.” You can change it later.", "text", None))
+        if resolved == "single":
+            questions.append(("backup_copies", "Are copies of this key’s backup kept in more than one place?",
+                              "These are copies of the same key, not additional signing keys.", "choice",
+                              [("one", "No, one known copy"), ("several", "Yes, more than one place"),
+                               ("unsure", "I’m not sure")]))
+        elif resolved == "multi":
+            questions.extend([
+                ("n", "How many separate signing keys are there?",
+                 "Count distinct keys, not backup copies. Enter a number from 2 to 100, or choose “I’m not sure.”", "number", None),
+                ("m", "How many of those keys must work together to spend?",
+                 "This is the threshold, often written as “2 of 3.” Enter the number needed, or choose “I’m not sure.”", "number", None),
+            ])
+        questions.extend([
+            ("coordinator", "Which app or service do you use to view or coordinate this wallet?",
+             "This is the watch-only or coordinating software, not a signing key. Choose “I’m not sure” if the name is unfamiliar.",
+             "choice", [(x, x) for x in COORDS] + [("Other / undecided", "I’m not sure")]),
+            ("delayed_path", "Does the wallet have another spending route that becomes available after a delay?",
+             "This might be written into the Bitcoin wallet policy, or arranged through a provider. A date written in this guide does not lock bitcoin.",
+             "choice", [("yes", "Yes"), ("no", "No"), ("unsure", "I’m not sure")]),
+        ])
+        if a.get("delayed_path") == "yes":
+            questions.append(("delayed_kind", "What controls that delayed route?",
+                              "Choose the closest description. If unknown, the folio will leave it for later clarification.", "choice",
+                              [("onchain", "A delay built into the Bitcoin wallet policy"),
+                               ("provider", "A provider, trustee, or other person releases access"),
+                               ("unsure", "I’m not sure")]))
+            if a.get("delayed_kind") == "onchain":
+                questions.append(("delay", "What delay and starting event are documented?",
+                                  "For example, “12 months after the last wallet activity.” Leave blank if unknown. Do not treat this as a verified policy.", "text", None))
+        return questions
+
+    def render_vault_intake(self, pad):
+        questions = self.vault_intake_questions()
+        idx = min(self.vault_intake["index"], len(questions) - 1)
+        key, title, help_text, kind, options = questions[idx]
+        self.pos_lbl.configure(text=f"WALLET SETUP · QUESTION {idx + 1}")
+        self.next_btn.configure(text=("ADD THIS WALLET →" if idx == len(questions) - 1 else "NEXT QUESTION →"))
+        tk.Label(pad, text=f"WALLET SETUP · QUESTION {idx + 1}", font=F_MONO_B,
+                 bg=PAPER, fg=OK).pack(anchor="w", pady=(4, 10))
+        tk.Label(pad, text=title, font=F_H2, bg=PAPER, fg=INK, anchor="w", justify="left",
+                 wraplength=640).pack(anchor="w", pady=(2, 8))
+        tk.Label(pad, text=help_text, font=F_BODY, bg=PAPER, fg="#2e2e2e", anchor="w", justify="left",
+                 wraplength=640).pack(anchor="w", pady=(0, 18))
+        self.intake_value = tk.StringVar(value=str(self.vault_intake["answers"].get(key, "")))
+        if kind == "choice":
+            for value, label in options:
+                tk.Radiobutton(pad, text=label, value=value, variable=self.intake_value,
+                               font=F_BODY, bg=PAPER, activebackground=PAPER, selectcolor="#ffffff",
+                               anchor="w", justify="left", wraplength=620).pack(anchor="w", pady=5)
+        else:
+            tk.Entry(pad, textvariable=self.intake_value, font=F_BODY, bg="#ffffff", fg=INK,
+                     relief="solid", bd=1).pack(fill="x", pady=4)
+            if kind == "number":
+                tk.Radiobutton(pad, text="I’m not sure", value="unsure", variable=self.intake_value,
+                               font=F_BODY, bg=PAPER, activebackground=PAPER, selectcolor="#ffffff",
+                               anchor="w").pack(anchor="w", pady=8)
+        vault = self.vault_intake["vault"]
+        summary = tk.LabelFrame(pad, text="  WALLET FOLIO SO FAR  ", font=F_MONO,
+                                bg="#ffffff", fg=INK, relief="solid", bd=1)
+        summary.pack(fill="x", pady=(22, 4))
+        setup_label = {"single": "Single-signature", "multi": "Multisignature",
+                       "unknown": "Not identified yet"}.get(vault.get("setupType"), "Waiting for your answer")
+        quorum = (f"{vault['m']}-of-{vault['n']}" if vault.get("m") and vault.get("n")
+                  else ("Threshold not known yet" if vault.get("setupType") == "multi" else "Not applicable yet"))
+        for line in (f"Name: {vault.get('name') or 'Not named yet'}",
+                     f"Signing setup: {setup_label}", f"Required keys: {quorum}",
+                     f"Wallet app/service: {vault.get('coordinator') or 'Not answered yet'}"):
+            tk.Label(summary, text=line, font=F_BODY, bg="#ffffff", fg=INK,
+                     anchor="w", justify="left", wraplength=620).pack(anchor="w", padx=12, pady=3)
+        tk.Label(pad, text="DRAFT FOLIO BUILDS IN MEMORY AS YOU ANSWER · NOTHING IS SAVED YET",
+                 font=("Courier", 8), bg=PAPER, fg="#6b6b6b").pack(anchor="w", pady=(24, 0))
+
+    def advance_vault_intake(self):
+        questions = self.vault_intake_questions()
+        idx = self.vault_intake["index"]
+        key, _title, _help, kind, _options = questions[idx]
+        answer = self.intake_value.get().strip()
+        if kind == "choice" and not answer:
+            messagebox.showinfo(APP_NAME, "Choose an answer, including “I’m not sure.”")
+            return
+        if kind == "number" and answer != "unsure":
+            minimum = 2 if key == "n" else 1
+            if not answer.isdigit() or not minimum <= int(answer) <= 100:
+                messagebox.showinfo(APP_NAME, f"Enter a whole number from {minimum} to 100, or choose “I’m not sure.”")
+                return
+            answer = int(answer)
+        if key in ("m", "n"):
+            n = self.vault_intake["answers"].get("n")
+            m = self.vault_intake["answers"].get("m")
+            if key == "m" and isinstance(n, int) and isinstance(answer, int) and answer > n:
+                messagebox.showinfo(APP_NAME, "The required key count cannot exceed the total key count.")
+                return
+            if key == "n" and isinstance(m, int) and isinstance(answer, int) and m > answer:
+                messagebox.showinfo(APP_NAME, "The total key count cannot be less than the required key count.")
+                return
+        answers = self.vault_intake["answers"]
+        old_value = answers.get(key)
+        answers[key] = answer
+        vault = self.vault_intake["vault"]
+        resolved = answers.get("structure_detail") if answers.get("structure") == "unsure" else answers.get("structure")
+        if key == "structure" and old_value != answer:
+            for stale in ("structure_detail", "backup_copies", "n", "m", "structure_unknown"):
+                answers.pop(stale, None)
+        elif key == "structure_detail" and old_value != answer:
+            for stale in ("backup_copies", "n", "m", "structure_unknown"):
+                answers.pop(stale, None)
+        elif key == "delayed_path" and old_value != answer:
+            answers.pop("delayed_kind", None)
+            answers.pop("delay", None)
+        elif key == "delayed_kind" and old_value != answer:
+            answers.pop("delay", None)
+        vault["name"] = answers.get("name") or "New wallet setup"
+        vault["coordinator"] = answers.get("coordinator", "")
+        vault["intakeAnswers"] = answers
+        vault["setupType"] = resolved or "unknown"
+        if resolved == "single":
+            vault.update({"m": 1, "n": 1, "script": "Single-signature (one key)"})
+            if not vault.get("keys"):
+                vault["keys"] = [{"label": "Key A"}]
+            if "backup_copies" in answers:
+                vault["backupCopyArrangement"] = answers["backup_copies"]
+        elif resolved == "multi":
+            vault.pop("backupCopyArrangement", None)
+            vault["n"] = answers.get("n") if isinstance(answers.get("n"), int) else ""
+            vault["m"] = answers.get("m") if isinstance(answers.get("m"), int) else ""
+            vault["script"] = "Not sure yet"
+            count = answers.get("n")
+            if isinstance(count, int):
+                old_keys = vault.get("keys", [])
+                vault["keys"] = (old_keys + [{"label": f"Key {i + 1}"} for i in range(len(old_keys), count)])[:count]
+            else:
+                vault["keys"] = []
+        else:
+            vault.pop("backupCopyArrangement", None)
+            vault["m"], vault["n"], vault["script"] = "", "", "Not sure yet"
+            vault["keys"] = []
+        delayed = answers.get("delayed_path")
+        delayed_kind = answers.get("delayed_kind")
+        vault["timelock"] = {"enabled": delayed == "yes" and delayed_kind == "onchain",
+                              "delay": answers.get("delay", "")}
+        self.mark_dirty()
+        if idx + 1 >= len(self.vault_intake_questions()):
+            if answers.get("delayed_path") == "yes":
+                mechanism = {"provider": "Provider-enforced off-chain delay",
+                             "onchain": "Bitcoin on-chain relative timelock"}.get(answers.get("delayed_kind"))
+                if mechanism:
+                    path = {"label": f"{vault['name']} delayed route", "mechanism": mechanism}
+                    if answers.get("delay"):
+                        path["delay"] = answers["delay"]
+                    self.plan["recoveryPaths"].append(path)
+            self.vault_intake = None
+            for button in self.step_buttons:
+                button.configure(state="normal")
+            self.render()
+        else:
+            self.vault_intake["index"] = idx + 1
+            self.render()
 
     def draw_vaults(self):
         for w in self.vaults_box.winfo_children():
@@ -1697,8 +1952,10 @@ class Wizard:
     def page_backups(self):
         pad = self.page("Folio · 05 · The map", "Descriptor & configuration backups", STEP_INTROS["backups"])
         tk.Label(pad, text="DESCRIPTOR / WALLET-CONFIGURATION COPIES", font=F_MONO_B, bg=PAPER, fg=INK).pack(anchor="w")
-        tk.Label(pad, text="Rule of thumb: one copy with every key backup, one with the trustee, one on the "
-                           "watch-only machine.", font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER).pack(anchor="w", pady=(2, 8))
+        tk.Label(pad, text="For multisignature and timed policies, this copy may be essential to rebuild the wallet. "
+                           "For a simple single-key setup, follow its tested restore instructions and record any "
+                           "configuration copies that are actually needed.", font=("Helvetica", 9), fg="#6b6b6b",
+                 bg=PAPER, wraplength=620, justify="left").pack(anchor="w", pady=(2, 8))
         self.dloc_box = tk.Frame(pad, bg=PAPER)
         self.dloc_box.pack(fill="x")
         self.draw_dlocs()
@@ -1794,6 +2051,14 @@ class Wizard:
     # ---- folio 09: export -------------------------------------------------
     def page_export(self):
         pad = self.page("Folio · 09 · Sealing the file", "Encrypt & export the inheritance file")
+        if self.app.test_mode:
+            tk.Label(pad, text="TEST MODE — EXPORT DISABLED", font=F_MONO_B,
+                     bg="#ffe0dc", fg=FLAG, padx=12, pady=10).pack(anchor="w", fill="x", pady=12)
+            tk.Label(pad, text="This run skips all environment checks. Do not enter real plan "
+                     "details. Opening files, entering unlock credentials, using YubiKeys, and saving are disabled. "
+                     "Close the app to discard synthetic test answers; this is not guaranteed RAM erasure.",
+                     font=F_BODY, bg=PAPER, fg=INK, justify="left", wraplength=620).pack(anchor="w", pady=8)
+            return
         self.note(pad, "Choose any independent unlock methods for this guide. Give a passphrase or enrolled YubiKey "
                        "to your lawyer if desired. Keep the program, encrypted file, and non-secret discovery instructions "
                        "where family can find them. Release conditions are instructions, not a software-enforced time lock.")
@@ -1876,10 +2141,11 @@ def main():
         self_test()
         return
     harden_process()  # RAM gate blocks if this cannot be established.
-    app = App()
+    test_mode = ("--test-only-synthetic-questionnaire" in sys.argv or
+                 "--test-only-skip-ram-path-check" in sys.argv)
+    app = App(test_mode=test_mode)
     app.mainloop()
 
 
 if __name__ == "__main__":
     main()
-
