@@ -124,7 +124,9 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     tk.Label(outer, text='Your family’s recovery guide', font=ui.F('Georgia', 24), bg=ui.PAPER, fg=ui.INK).pack(anchor='w')
     tk.Label(outer, text='One step at a time. Notes can be saved back into the encrypted file.', bg=ui.PAPER).pack(anchor='w', pady=(4,16))
     body = tk.Frame(outer, bg=ui.PAPER); body.pack(fill='both', expand=True)
-    nav = tk.Frame(body, bg=ui.PAPER2); nav.pack(side='left', fill='y', padx=(0,18))
+    nav = tk.Frame(body, bg=ui.PAPER2, width=360)
+    nav.pack(side='left', fill='y', padx=(0,18))
+    nav.pack_propagate(False)
     panel = tk.Frame(body, bg=ui.PAPER); panel.pack(side='left', fill='both', expand=True)
     step_lbl = tk.Label(panel, font=ui.F('Courier', 9), fg=ui.HINT, bg=ui.PAPER, anchor='w')
     step_lbl.pack(fill='x')
@@ -166,7 +168,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
         choices.selection_set(index[0])
         choices.see(index[0])
     count = len(recovery_steps(plan))
-    choices = tk.Listbox(nav, width=28, exportselection=False, font=ui.F('Helvetica', 12),
+    choices = tk.Listbox(nav, width=36, exportselection=False, font=ui.F('Helvetica', 12),
                          relief='flat', highlightthickness=0, activestyle='none',
                          bg=ui.PAPER2, fg=ui.INK, selectbackground=ui.INK, selectforeground=ui.PAPER)
     choices.pack(side='left', fill='both', expand=True)

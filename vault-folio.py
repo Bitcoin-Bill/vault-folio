@@ -728,71 +728,85 @@ def build_runbook_text(p):
 
 # In-app Canvas diagrams
 def canvas_quorum(cv, v, vi):
+    """Readable, wrapped signer cards sized for the app's large interface scale."""
     keys = list(v.get("keys") or [])
-    n = int(v.get("n") or len(keys) or 0)
-    m = int(v.get("m") or 0)
+    try:
+        n = int(v.get("n") or len(keys) or 0)
+        m = int(v.get("m") or 0)
+    except (TypeError, ValueError):
+        n, m = len(keys), 0
     if n <= 0:
         return
+    n = min(n, 30)
     while len(keys) < n:
         keys.append({})
-    per_row = min(n, 4)
-    rows = (n + per_row - 1) // per_row
-    bw, bh, gap, mx = 158, 96, 16, 20
-    w = mx * 2 + per_row * bw + (per_row - 1) * gap
-    h = 64 + rows * (bh + gap) - gap + 8
-    cv.configure(width=w, height=h)
+    width, x, cardw = 900, 18, 864
+    title_font = themes.F("Courier", 10, "bold")
+    body_font = themes.F("Helvetica", 10)
+    size = abs(int(body_font[1])) if len(body_font) > 1 else 10
+    chars = max(22, int(1120 / max(size, 1)))
+    def wrap(value):
+        words, lines, line = str(value or "Not recorded").split(), [], ""
+        for word in words:
+            if line and len(line) + len(word) + 1 > chars:
+                lines.append(line); line = word
+            else:
+                line = (line + " " + word).strip()
+        if line: lines.append(line)
+        return "\n".join(lines or ["Not recorded"]), max(1, len(lines))
     title = f"VAULT {vi + 1}" + (f" — {v.get('name')}" if v.get("name") else "")
-    cv.create_text(mx, 24, anchor="w", text=_short(title, 46),
-                   font=themes.F("Courier", 10, "bold"), fill=INK)
-    is_single = v.get("setupType") == "single" or (m == 1 and n == 1)
-    q = "SINGLE SIGNATURE" if is_single else (f"{m}-OF-{n} MULTISIG" if m else f"{n} KEYS")
-    cv.create_text(w - mx, 24, anchor="e", text=q, font=themes.F("Courier", 9, "bold"), fill=FLAG)
-    if is_single:
-        caption = "ONE SIGNING KEY AUTHORIZES A SPEND; COPIES ARE BACKUPS, NOT EXTRA KEYS"
-    else:
-        caption = f"ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE" if m else "KEY DETAILS TO BE CONFIRMED"
-    if is_single or m:
-        cv.create_text(w / 2, 46, text=caption, font=themes.F("Courier", 7), fill=DIM)
-        cv.create_line(mx, 53, w - mx, 53, fill=INK)
-    for i in range(n):
-        r, c = divmod(i, per_row)
-        x = mx + c * (bw + gap)
-        y = 64 + r * (bh + gap)
-        k = keys[i]
-        documented = any(k.get(f) for f in ("label", "device", "locations"))
-        cv.create_rectangle(x, y, x + bw, y + bh, fill=WHITE, outline=INK,
-                            dash=() if documented else (4, 3))
-        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=themes.F("Courier", 7), fill=HINT)
-        cv.create_text(x + 10, y + 37, anchor="w", text=_short(k.get("label") or "(undocumented)", 18),
-                       font=themes.F("Courier", 9, "bold"), fill=INK)
-        if k.get("device"):
-            cv.create_text(x + 10, y + 55, anchor="w", text="signs with: " + _short(k["device"], 18),
-                           font=themes.F("Courier", 7), fill=INK_SOFT)
-        if k.get("locations"):
-            cv.create_text(x + 10, y + 71, anchor="w", text="backup: " + _short(k["locations"], 22),
-                           font=themes.F("Courier", 7), fill=OK)
+    q = "SINGLE SIGNATURE" if (v.get("setupType") == "single" or (m == 1 and n == 1)) else (f"{m}-OF-{n} MULTISIG" if m else f"{n} KEYS")
+    caption = ("ONE SIGNING KEY AUTHORIZES A SPEND; COPIES ARE BACKUPS, NOT EXTRA KEYS"
+               if q == "SINGLE SIGNATURE" else
+               (f"ANY {m} OF THESE {n} KEYS MUST AGREE BEFORE A SINGLE COIN CAN MOVE" if m else "KEY DETAILS TO BE CONFIRMED"))
+    y = 16
+    cv.delete("all")
+    cv.create_text(x, y, anchor="w", text=title, width=cardw, font=title_font, fill=INK)
+    cv.create_text(width-x, y, anchor="e", text=q, width=cardw//2, font=title_font, fill=FLAG)
+    y += 32
+    cap, _ = wrap(caption)
+    cv.create_text(x, y, anchor="w", text=cap, width=cardw, font=body_font, fill=DIM)
+    y += 38
+    cv.create_line(x, y, width-x, y, fill=INK)
+    y += 10
+    for i, key in enumerate(keys[:n]):
+        documented = any(key.get(f) for f in ("label", "device", "locations"))
+        details = []
+        details.append((f"KEY {i+1} · {key.get('label') or '(undocumented)'}", title_font, INK))
+        if key.get("device"):
+            details.append(("Signs with: " + str(key["device"]), body_font, INK_SOFT))
+        if key.get("locations"):
+            details.append(("Backup place: " + str(key["locations"]), body_font, OK))
         if not documented:
-            cv.create_text(x + 10, y + 71, anchor="w", text="document this key in the plan",
-                           font=themes.F("Courier", 7), fill=FLAG)
-
+            details.append(("Document this key in the plan", body_font, FLAG))
+        lines = sum(wrap(t)[1] for t, _, _ in details)
+        line_height = max(20, size + 12)
+        bh = max(82, lines * line_height + 24)
+        cv.create_rectangle(x, y, width-x, y+bh, fill=WHITE, outline=INK,
+                            dash=() if documented else (4, 3))
+        ty = y + 12
+        for text, font, color in details:
+            val, count = wrap(text)
+            cv.create_text(x+12, ty, anchor="nw", text=val, width=cardw-24, font=font, fill=color)
+            ty += count * line_height + 4
+        y += bh + 10
+    cv.configure(width=width, height=min(y+8, 680), scrollregion=(0, 0, width, y+8))
 
 def canvas_family_map(cv, plan):
-    """Setup tree plus the people and places recorded for the heirs."""
+    """One-column clickable map for setup, signers, people, and numbered steps."""
     people = plan.get("people") or {}
-    vaults = plan.get("vaults") or [{}]
-    vault = vaults[0]
+    vault = (plan.get("vaults") or [{}])[0]
     keys = list(vault.get("keys") or [])
-    n = vault.get("n") or len(keys) or 1
     try:
-        n = int(n)
+        n = int(vault.get("n") or len(keys) or 1)
     except (TypeError, ValueError):
         n = len(keys) or 1
+    n = max(1, min(n, 30))
     m = vault.get("m") or ""
     while len(keys) < n:
         keys.append({})
 
     def backup_details(key):
-        """Read holder and location details from inventory records for this signer."""
         key_label = str(key.get("label") or "").strip()
         vault_name = str(vault.get("name") or "").strip()
         aliases = {value.casefold() for value in (
@@ -804,13 +818,10 @@ def canvas_family_map(cv, plan):
         for record in plan.get("backupRecords") or []:
             ref = str(record.get("vault") or "").strip().casefold()
             record_label = str(record.get("label") or "").strip().casefold()
-            padded_label = " " + record_label.replace("/", " ").replace(":", " ").replace("-", " ") + " "
-            has_key_label = bool(key_label and (" " + key_label.casefold() + " ") in padded_label)
-            if ref in aliases or record_label in aliases or (
-                vault_name and ref == vault_name.casefold() and has_key_label
-            ):
+            padded = " " + record_label.replace("/", " ").replace(":", " ").replace("-", " ") + " "
+            has_label = bool(key_label and (" " + key_label.casefold() + " ") in padded)
+            if ref in aliases or record_label in aliases or (vault_name and ref == vault_name.casefold() and has_label):
                 related.append(record)
-
         holders, places = [], [str(key.get("locations") or "").strip()]
         for record in related:
             for candidate in (record.get("custodian"), record.get("locator")):
@@ -824,67 +835,85 @@ def canvas_family_map(cv, plan):
         return ("; ".join(holders) or "Not recorded",
                 "; ".join(value for value in places if value) or "Not recorded")
 
-    people_cards = [
-        ("FIRST CONTACT", people.get("executor") or "Not named"),
-        ("INSTRUCTIONS HOLDER", people.get("trustee") or "Not named"),
-    ]
+    def wrapped(value, limit):
+        words = str(value or "Not recorded").split()
+        lines, line = [], ""
+        for word in words:
+            if line and len(line) + len(word) + 1 > limit:
+                lines.append(line)
+                line = word
+            else:
+                line = (line + " " + word).strip()
+        if line:
+            lines.append(line)
+        return "\n".join(lines or ["Not recorded"])
+
+    width, x, cardw = 760, 18, 724
+    y = 16
+    cv.delete("all")
+    rule = f"{m}-of-{n}" if m else (vault.get("setupType") or f"{n} keys")
+    setup_title = str(vault.get("name") or "Unnamed setup")
+    cv.create_rectangle(x, y, x + cardw, y + 76, fill=WHITE, outline=INK, tags=("setup",))
+    cv.create_text(x + 14, y + 22, anchor="w", text="SETUP · " + wrapped(setup_title, 58),
+                   width=cardw - 28, font=themes.F("Courier", 11, "bold"), fill=INK, tags=("setup",))
+    cv.create_text(x + 14, y + 56, anchor="w", text=str(rule).upper() + " · click a card",
+                   width=cardw - 28, font=themes.F("Courier", 9, "bold"), fill=FLAG, tags=("setup",))
+    cv.tag_bind("setup", "<Button-1>", lambda _e, v=vault: show_tree_detail("This setup", [
+        ("Name", v.get("name") or "Unnamed setup"), ("Rule", rule),
+        ("Type", v.get("setupType") or "Not recorded"),
+        ("Delay", (v.get("timelock") or {}).get("delay") or "None recorded")]))
+    y += 88
+
+    for i, key in enumerate(keys[:n]):
+        holder, place = backup_details(key)
+        tag = f"key{i}"
+        cv.create_rectangle(x, y, x + cardw, y + 104, fill=WHITE, outline=INK, tags=(tag,))
+        cv.create_text(x + 14, y + 22, anchor="w", text=f"KEY {i + 1} · {wrapped(key.get('label') or 'Not named', 58)}",
+                       width=cardw - 28, font=themes.F("Courier", 10, "bold"), fill=INK, tags=(tag,))
+        cv.create_text(x + 14, y + 52, anchor="w", text="Holder: " + wrapped(holder, 78),
+                       width=cardw - 28, font=themes.F("Helvetica", 10), fill=INK, tags=(tag,))
+        cv.create_text(x + 14, y + 82, anchor="w", text="Place: " + wrapped(place, 78),
+                       width=cardw - 28, font=themes.F("Helvetica", 10), fill=OK, tags=(tag,))
+        cv.tag_bind(tag, "<Button-1>", lambda _e, k=key, ix=i, h=holder, p=place: show_tree_detail(
+            f"Key {ix + 1}", [("Label", k.get("label") or "Not named"), ("Holder", h),
+                              ("Place", p), ("Device", k.get("device") or "Not recorded")]))
+        y += 114
+
+    people_cards = [("FIRST CONTACT", people.get("executor") or "Not named"),
+                    ("INSTRUCTIONS HOLDER", people.get("trustee") or "Not named")]
     heirs = [str(row.get("name") or "").strip() for row in people.get("heirs") or []]
     people_cards.extend(("HEIR", name) for name in heirs if name)
     if not any(heirs):
         people_cards.append(("HEIR", "Not named"))
-    lawyers = [str(row.get("name") or row.get("firm") or "").strip()
-               for row in plan.get("lawyers") or []]
+    lawyers = [str(row.get("name") or row.get("firm") or "").strip() for row in plan.get("lawyers") or []]
     people_cards.extend(("LAWYER", name) for name in lawyers if name)
     if not any(lawyers):
         people_cards.append(("LAWYER", "Not named"))
-
-    key_w, gap, mx = 190, 14, 20
-    key_width = mx * 2 + n * key_w + (n - 1) * gap
-    people_width = mx + max(0, len(people_cards) - 1) * 210 + 196 + mx
-    width = max(860, key_width, people_width)
-    height = 360
-    cv.configure(width=min(width, 820), height=height, bg=PAPER, highlightthickness=0,
-                 scrollregion=(0, 0, width, height))
-    rule = f"{m}-of-{n}" if m and n else (vault.get("setupType") or "setup")
-    cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK)
-    cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=themes.F("Courier", 8), fill=HINT)
-    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 18), font=themes.F("Courier", 11, "bold"), fill=INK, tags=("setup",))
-    cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK, tags=("setup",))
-    cv.create_text(mx, 96, anchor="w", text=str(rule).upper() + "  · click a card", font=themes.F("Courier", 11, "bold"), fill=FLAG)
-    cv.tag_bind("setup", "<Button-1>", lambda _e, v=vault: show_tree_detail("This setup", [
-        ("Name", v.get("name") or "Unnamed setup"),
-        ("Rule", rule),
-        ("Type", v.get("setupType") or "Not recorded"),
-        ("Delay", (v.get("timelock") or {}).get("delay") or "None recorded"),
-    ]))
-    for i in range(n):
-        x = mx + i * (key_w + gap)
-        y = 132
-        key = keys[i]
-        holder, place = backup_details(key)
-        cv.create_line(150, 78, x + key_w / 2, y, fill=LINE)
-        tag = f"key{i}"
-        cv.create_rectangle(x, y, x + key_w, y + 108, fill=WHITE, outline=INK, tags=(tag,))
-        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=themes.F("Courier", 8), fill=HINT, tags=(tag,))
-        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=themes.F("Courier", 10, "bold"), fill=INK, tags=(tag,))
-        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(holder, 18), font=themes.F("Courier", 8), tags=(tag,))
-        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(place, 20), font=themes.F("Courier", 8), fill=OK, tags=(tag,))
-        cv.tag_bind(tag, "<Button-1>", lambda _e, k=key, n=i, h=holder, p=place: show_tree_detail(f"Key {n + 1}", [
-            ("Label", k.get("label") or "Not named"),
-            ("Holder", h),
-            ("Place", p),
-            ("Device", k.get("device") or "Not recorded"),
-        ]))
+    cv.create_text(x, y + 12, anchor="w", text="PEOPLE", font=themes.F("Courier", 10, "bold"), fill=HINT)
+    y += 28
     for i, (label, value) in enumerate(people_cards):
-        x = mx + i * 210
-        y = 268
         tag = f"person{i}"
-        cv.create_rectangle(x, y, x + 196, y + 72, fill=WHITE, outline=INK, tags=(tag,))
-        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=themes.F("Courier", 8), fill=HINT, tags=(tag,))
-        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=themes.F("Courier", 10, "bold"), fill=INK, tags=(tag,))
+        cv.create_rectangle(x, y, x + cardw, y + 64, fill=WHITE, outline=INK, tags=(tag,))
+        cv.create_text(x + 14, y + 30, anchor="w", text=label + ": " + wrapped(value, 64),
+                       width=cardw - 28, font=themes.F("Helvetica", 10, "bold"), fill=INK, tags=(tag,))
         cv.tag_bind(tag, "<Button-1>", lambda _e, title=label, who=value: show_tree_detail(title, [("Name", who)]))
+        y += 72
+
+    cv.create_text(x, y + 12, anchor="w", text="NUMBERED GUIDE STEPS",
+                   font=themes.F("Courier", 10, "bold"), fill=HINT)
+    y += 28
+    for number, title, detail in heir_steps_for(plan):
+        cv.create_rectangle(x, y, x + cardw, y + 76, fill=WHITE, outline=LINE)
+        cv.create_text(x + 14, y + 21, anchor="w", text=f"{number} · {wrapped(title, 66)}",
+                       width=cardw - 28, font=themes.F("Courier", 9, "bold"), fill=INK)
+        cv.create_text(x + 14, y + 50, anchor="w", text=wrapped(detail, 78),
+                       width=cardw - 28, font=themes.F("Helvetica", 9), fill=INK)
+        y += 84
+    cv.configure(width=width, height=min(680, max(400, y + 16)), bg=PAPER,
+                 highlightthickness=0, scrollregion=(0, 0, width, y + 16))
     cv.tag_bind("setup", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
-    cv.bind("<Button-1>", lambda _e: cv.configure(cursor="hand2"))
+    cv.bind("<Motion>", lambda _e: cv.configure(cursor="hand2"))
+    return y + 16
 
 
 def heir_steps_for(plan):
@@ -926,35 +955,37 @@ def show_tree_detail(title, rows):
 
 
 def canvas_psbt_flow(cv, medium):
-    w, h, wall = 760, 280, 380
-    med = _short(medium or "QR codes / removable media, as recorded in the plan", 40)
-    cv.configure(width=w, height=h)
-    cv.create_text(24, 22, anchor="w", text="ONLINE SIDE — the everyday machine",
-                   font=themes.F("Courier", 8), fill=HINT)
-    cv.create_text(w - 24, 22, anchor="e", text="AIR-GAPPED SIDE — never touches a network",
-                   font=themes.F("Courier", 8), fill=HINT)
-    cv.create_line(wall, 12, wall, h - 34, fill=FLAG, width=2, dash=(6, 5))
-    cv.create_text(wall, h - 16, text="THE AIR GAP — only this crosses: " + med,
-                   font=themes.F("Courier", 7), fill=FLAG)
-
-    def box(x, y, bw, bh, title, subs):
-        cv.create_rectangle(x, y, x + bw, y + bh, fill=WHITE, outline=INK)
-        cv.create_text(x + 12, y + 24, anchor="w", text=title, font=themes.F("Courier", 8, "bold"), fill=INK)
-        ty = y + 42
-        for line in subs:
-            cv.create_text(x + 12, ty, anchor="w", text=line, font=themes.F("Courier", 7), fill=INK_SOFT)
-            ty += 13
-
-    box(16, 50, 300, 96, "1 · WATCH-ONLY",
-        ["Builds the unsigned transaction.", "Cannot sign."])
-    box(440, 50, 300, 96, "2 · SIGNING DEVICE",
-        ["Check address, amount, and fee.", "Stop if anything differs."])
-    box(16, 176, 300, 78, "4 · BROADCAST",
-        ["The signed transaction returns here."])
-    cv.create_line(316, 98, 430, 98, fill=INK, width=1, arrow="last")
-    cv.create_text(372, 84, text="unsigned", font=themes.F("Courier", 7), fill=INK)
-    cv.create_line(590, 146, 590, 168, 330, 168, fill=INK, width=1, arrow="last")
-    cv.create_text(500, 156, text="signed · 3", font=themes.F("Courier", 7), fill=INK)
+    """Large, vertically ordered signing flow with room for scaled text."""
+    w, wall = 900, 450
+    med = str(medium or "QR codes / removable media, as recorded in the plan")
+    cv.delete("all")
+    cv.configure(width=w, height=470, bg=PAPER, scrollregion=(0, 0, w, 470))
+    cv.create_text(24, 20, anchor="w", text="ONLINE SIDE — the everyday machine",
+                   font=themes.F("Courier", 9, "bold"), fill=HINT)
+    cv.create_text(w-24, 20, anchor="e", text="AIR-GAPPED SIDE — never touches a network",
+                   font=themes.F("Courier", 9, "bold"), fill=HINT)
+    cv.create_line(wall, 42, wall, 402, fill=FLAG, width=2, dash=(6, 5))
+    cv.create_text(wall, 450, text="THE AIR GAP — only this crosses: " + med,
+                   width=w-48, font=themes.F("Courier", 9), fill=FLAG)
+    boxes = [
+        (24, 58, 392, 130, "1 · WATCH-ONLY COORDINATOR",
+         "Builds the unsigned transaction. Sees balances and addresses; cannot sign."),
+        (484, 58, 392, 130, "2 · SIGNING DEVICE",
+         "Check address, amount, and fee on its screen. Stop if anything differs."),
+        (24, 224, 392, 110, "4 · FINALIZE & BROADCAST",
+         "The signed transaction returns here and is sent to the Bitcoin network."),
+    ]
+    for x, y, bw, bh, title, detail in boxes:
+        cv.create_rectangle(x, y, x+bw, y+bh, fill=WHITE, outline=INK)
+        cv.create_text(x+14, y+24, anchor="w", text=title, width=bw-28,
+                       font=themes.F("Courier", 9, "bold"), fill=INK)
+        cv.create_text(x+14, y+66, anchor="nw", text=detail, width=bw-28,
+                       font=themes.F("Helvetica", 10), fill=INK_SOFT)
+    cv.create_line(416, 104, 476, 104, fill=INK, width=2, arrow="last")
+    cv.create_text(446, 88, text="unsigned PSBT", font=themes.F("Courier", 8), fill=INK)
+    cv.create_line(680, 188, 680, 210, 440, 210, 440, 280, 424, 280,
+                   fill=INK, width=2, arrow="last")
+    cv.create_text(555, 202, text="signed PSBT · 3", font=themes.F("Courier", 8), fill=INK)
 
 
 # --------------------------------------------------------------------------
@@ -1376,31 +1407,20 @@ def open_choice(app, plan):
 
 def show_heir(app, plan):
     def draw_diagrams(box, current_plan):
-        tk.Label(box, text="SETUP, KEY PLACES, AND PEOPLE", font=themes.F("Courier", 9),
-                 bg=PAPER, fg=HINT).pack(anchor="w", pady=(0, 6))
+        tk.Label(box, text="ONE-PAGE FAMILY MAP · CLICK SETUP, KEY, OR PERSON CARDS",
+                 font=themes.F("Courier", 9), bg=PAPER, fg=HINT).pack(anchor="w", pady=(0, 6))
         family_map = tk.Frame(box, bg=PAPER)
-        family_map.pack(fill="x", pady=(0, 12))
+        family_map.pack(fill="both", expand=True)
         cv = tk.Canvas(family_map, bg=PAPER, highlightthickness=0)
-        family_xscroll = tk.Scrollbar(family_map, orient="horizontal", command=cv.xview)
-        cv.configure(xscrollcommand=family_xscroll.set)
+        ybar = tk.Scrollbar(family_map, orient="vertical", command=cv.yview)
+        xbar = tk.Scrollbar(family_map, orient="horizontal", command=cv.xview)
+        cv.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
         canvas_family_map(cv, current_plan)
-        cv.pack(fill="x", expand=True)
-        family_xscroll.pack(fill="x")
-        tk.Label(box, text="STEPS FOR THIS GUIDE", font=themes.F("Courier", 9),
-                 bg=PAPER, fg=HINT).pack(anchor="w")
-        for number, title, detail in heir_steps_for(current_plan):
-            card = tk.Frame(box, bg=WHITE, highlightthickness=1, highlightbackground=LINE)
-            card.pack(fill="x", pady=4)
-            tk.Label(card, text=number + "  " + title, font=themes.F("Courier", 11, "bold"),
-                     bg=WHITE).pack(anchor="w", padx=12, pady=(8, 0))
-            tk.Label(card, text=detail, font=themes.F("Helvetica", 12), bg=WHITE,
-                     wraplength=640, justify="left").pack(anchor="w", padx=12, pady=(0, 8))
-        for vi, vault in enumerate(current_plan.get("vaults") or []):
-            if not (vault.get("keys") or vault.get("n")):
-                continue
-            quorum = tk.Canvas(box, bg=PAPER, highlightthickness=0)
-            canvas_quorum(quorum, vault, vi)
-            quorum.pack(anchor="w", pady=(8, 14))
+        cv.grid(row=0, column=0, sticky="nsew")
+        ybar.grid(row=0, column=1, sticky="ns")
+        xbar.grid(row=1, column=0, sticky="ew")
+        family_map.rowconfigure(0, weight=1)
+        family_map.columnconfigure(0, weight=1)
     show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams)
 
 
@@ -2354,10 +2374,11 @@ class Wizard:
             for vi, v in enumerate(self.plan["vaults"]):
                 cv = tk.Canvas(pad, bg=PAPER, highlightthickness=0)
                 canvas_quorum(cv, v, vi)
-                cv.pack(anchor="w", pady=(0, 10))
+                cv.pack(anchor="w", pady=(0, 14))
+            tk.Label(pad, text="SIGNING FLOW", font=F_MONO_B, bg=PAPER, fg=INK).pack(anchor="w", pady=(4, 6))
             cv2 = tk.Canvas(pad, bg=PAPER, highlightthickness=0)
             canvas_psbt_flow(cv2, self.plan["signing"].get("medium"))
-            cv2.pack(anchor="w", pady=(0, 6))
+            cv2.pack(anchor="w", pady=(0, 14))
 
         tk.Label(pad, text="WHERE COPIES OF THE ENCRYPTED FILE SHOULD LIVE", font=F_MONO_B,
                  bg=PAPER, fg=INK).pack(anchor="w", pady=(20, 6))
