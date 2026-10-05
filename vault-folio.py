@@ -786,22 +786,67 @@ def canvas_family_map(cv, plan):
     m = vault.get("m") or ""
     while len(keys) < n:
         keys.append({})
+
+    def backup_details(key):
+        """Read holder and location details from inventory records for this signer."""
+        key_label = str(key.get("label") or "").strip()
+        vault_name = str(vault.get("name") or "").strip()
+        aliases = {value.casefold() for value in (
+            key_label,
+            f"{vault_name} / {key_label}" if vault_name and key_label else "",
+            f"{vault_name}: {key_label}" if vault_name and key_label else "",
+        ) if value}
+        related = []
+        for record in plan.get("backupRecords") or []:
+            ref = str(record.get("vault") or "").strip().casefold()
+            record_label = str(record.get("label") or "").strip().casefold()
+            padded_label = " " + record_label.replace("/", " ").replace(":", " ").replace("-", " ") + " "
+            has_key_label = bool(key_label and (" " + key_label.casefold() + " ") in padded_label)
+            if ref in aliases or record_label in aliases or (
+                vault_name and ref == vault_name.casefold() and has_key_label
+            ):
+                related.append(record)
+
+        holders, places = [], [str(key.get("locations") or "").strip()]
+        for record in related:
+            for candidate in (record.get("custodian"), record.get("locator")):
+                value = str(candidate or "").strip()
+                if value and value not in holders:
+                    holders.append(value)
+            for candidate in (record.get("site"), record.get("hint")):
+                value = str(candidate or "").strip()
+                if value and value not in places:
+                    places.append(value)
+        return ("; ".join(holders) or "Not recorded",
+                "; ".join(value for value in places if value) or "Not recorded")
+
     people_cards = [
         ("FIRST CONTACT", people.get("executor") or "Not named"),
         ("INSTRUCTIONS HOLDER", people.get("trustee") or "Not named"),
-        ("HEIR", ", ".join(h.get("name") for h in people.get("heirs") or [] if h.get("name")) or "Not named"),
-        ("LAWYER", ", ".join(row.get("name") or row.get("firm") or "" for row in plan.get("lawyers") or []).strip(", ") or "Not named"),
     ]
+    heirs = [str(row.get("name") or "").strip() for row in people.get("heirs") or []]
+    people_cards.extend(("HEIR", name) for name in heirs if name)
+    if not any(heirs):
+        people_cards.append(("HEIR", "Not named"))
+    lawyers = [str(row.get("name") or row.get("firm") or "").strip()
+               for row in plan.get("lawyers") or []]
+    people_cards.extend(("LAWYER", name) for name in lawyers if name)
+    if not any(lawyers):
+        people_cards.append(("LAWYER", "Not named"))
+
     key_w, gap, mx = 190, 14, 20
-    width = max(860, mx * 2 + n * key_w + (n - 1) * gap)
+    key_width = mx * 2 + n * key_w + (n - 1) * gap
+    people_width = mx + max(0, len(people_cards) - 1) * 210 + 196 + mx
+    width = max(860, key_width, people_width)
     height = 250 + 110
-    cv.configure(width=width, height=height, bg="#fafaf8", highlightthickness=0)
+    cv.configure(width=min(width, 820), height=height, bg=PAPER, highlightthickness=0,
+                 scrollregion=(0, 0, width, height))
     rule = f"{m}-of-{n}" if m and n else (vault.get("setupType") or "setup")
-    cv.create_rectangle(mx, 16, 280, 78, fill="#ffffff", outline="#0a0a0a")
-    cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=("Courier", 8), fill="#6b6b6b")
-    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=("Courier", 11, "bold"), tags=("setup",))
-    cv.create_rectangle(mx, 16, 280, 78, fill="#ffffff", outline="#0a0a0a", tags=("setup",))
-    cv.create_text(300, 48, anchor="w", text=str(rule).upper() + "  · click a card", font=("Courier", 11, "bold"), fill="#b3282d")
+    cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK)
+    cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=("Courier", 8), fill=HINT)
+    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=("Courier", 11, "bold"), fill=INK, tags=("setup",))
+    cv.create_rectangle(mx, 16, 280, 78, fill=WHITE, outline=INK, tags=("setup",))
+    cv.create_text(300, 48, anchor="w", text=str(rule).upper() + "  · click a card", font=("Courier", 11, "bold"), fill=FLAG)
     cv.tag_bind("setup", "<Button-1>", lambda _e, v=vault: show_tree_detail("This setup", [
         ("Name", v.get("name") or "Unnamed setup"),
         ("Rule", rule),
@@ -812,59 +857,68 @@ def canvas_family_map(cv, plan):
         x = mx + i * (key_w + gap)
         y = 108
         key = keys[i]
-        cv.create_line(150, 78, x + key_w / 2, y, fill="#c9c7bf")
+        holder, place = backup_details(key)
+        cv.create_line(150, 78, x + key_w / 2, y, fill=LINE)
         tag = f"key{i}"
-        cv.create_rectangle(x, y, x + key_w, y + 108, fill="#ffffff", outline="#0a0a0a", tags=(tag,))
-        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 8), fill="#6b6b6b", tags=(tag,))
-        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=("Courier", 10, "bold"), tags=(tag,))
-        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(key.get("notes") or "Not named", 18), font=("Courier", 8), tags=(tag,))
-        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(key.get("locations") or "Not recorded", 20), font=("Courier", 8), fill="#2e6b4f", tags=(tag,))
-        cv.tag_bind(tag, "<Button-1>", lambda _e, k=key, n=i: show_tree_detail(f"Key {n + 1}", [
+        cv.create_rectangle(x, y, x + key_w, y + 108, fill=WHITE, outline=INK, tags=(tag,))
+        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 8), fill=HINT, tags=(tag,))
+        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=("Courier", 10, "bold"), fill=INK, tags=(tag,))
+        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(holder, 18), font=("Courier", 8), tags=(tag,))
+        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(place, 20), font=("Courier", 8), fill=OK, tags=(tag,))
+        cv.tag_bind(tag, "<Button-1>", lambda _e, k=key, n=i, h=holder, p=place: show_tree_detail(f"Key {n + 1}", [
             ("Label", k.get("label") or "Not named"),
-            ("Holder", k.get("notes") or "Not named"),
-            ("Place", k.get("locations") or "Not recorded"),
+            ("Holder", h),
+            ("Place", p),
             ("Device", k.get("device") or "Not recorded"),
         ]))
     for i, (label, value) in enumerate(people_cards):
         x = mx + i * 210
         y = 240
         tag = f"person{i}"
-        cv.create_rectangle(x, y, x + 196, y + 72, fill="#ffffff", outline="#0a0a0a", tags=(tag,))
-        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=("Courier", 8), fill="#6b6b6b", tags=(tag,))
-        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=("Courier", 10, "bold"), tags=(tag,))
+        cv.create_rectangle(x, y, x + 196, y + 72, fill=WHITE, outline=INK, tags=(tag,))
+        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=("Courier", 8), fill=HINT, tags=(tag,))
+        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=("Courier", 10, "bold"), fill=INK, tags=(tag,))
         cv.tag_bind(tag, "<Button-1>", lambda _e, title=label, who=value: show_tree_detail(title, [("Name", who)]))
     cv.tag_bind("setup", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
     cv.bind("<Button-1>", lambda _e: cv.configure(cursor="hand2"))
 
 
 def heir_steps_for(plan):
-    """Short visual steps from this plan only."""
+    """Build concise heir steps from names and locations already in the guide."""
     people = plan.get("people") or {}
     vault = (plan.get("vaults") or [{}])[0]
     contact = people.get("executor") or "the first contact named in the guide"
     where = (plan.get("inheritance") or {}).get("letterLocation") or "the place named for the sealed guide"
     rule = f"{vault.get('m')} of {vault.get('n')}" if vault.get("m") and vault.get("n") else (vault.get("setupType") or "the recorded rule")
-    places = [key.get("locations") for key in vault.get("keys") or [] if key.get("locations")]
-    place = places[0] if places else "the places named on each key"
+    vault_name = str(vault.get("name") or "").strip()
+    if vault_name:
+        rule = f"{vault_name}: {rule}"
+    keys = vault.get("keys") or []
+    labels = [str(key.get("label") or "").strip() for key in keys]
+    labels = [label for label in labels if label]
+    places = [str(key.get("locations") or "").strip() for key in keys]
+    places = [place for place in places if place]
+    named_keys = ", ".join(labels) or "the signer labels in the guide"
+    named_places = ", ".join(dict.fromkeys(places)) or "the places named on each key"
     return [
         ("1", "Read this first", "This guide has no seed and cannot spend bitcoin."),
         ("2", "Contact " + contact, "Use a route the family already knows."),
         ("3", "Find the guide", where),
-        ("4", "Follow " + str(rule), "Copies of one key still count as one key."),
-        ("5", "Collect backups from " + place, "Do not gather every secret on one computer."),
+        ("4", "Follow " + str(rule), "Required signer labels: " + named_keys + ". Copies of one key still count as one key."),
+        ("5", "Collect backups", "Use the recorded locations: " + named_places + ". Do not gather every secret on one computer."),
     ]
 
 
 def show_tree_detail(title, rows):
     window = tk.Toplevel()
     window.title(title)
-    window.configure(bg="#fafaf8")
-    tk.Label(window, text=title, font=("Georgia", 18), bg="#fafaf8").pack(anchor="w", padx=18, pady=(16, 8))
+    window.configure(bg=PAPER)
+    tk.Label(window, text=title, font=("Georgia", 18), bg=PAPER, fg=INK).pack(anchor="w", padx=18, pady=(16, 8))
     for label, value in rows:
-        tk.Label(window, text=label, font=("Courier", 9), fg="#6b6b6b", bg="#fafaf8").pack(anchor="w", padx=18)
-        tk.Label(window, text=value, font=("Helvetica", 13), bg="#fafaf8", wraplength=420, justify="left").pack(anchor="w", padx=18, pady=(0, 8))
+        tk.Label(window, text=label, font=("Courier", 9), fg=HINT, bg=PAPER).pack(anchor="w", padx=18)
+        tk.Label(window, text=value, font=("Helvetica", 13), bg=PAPER, fg=INK, wraplength=420, justify="left").pack(anchor="w", padx=18, pady=(0, 8))
     tk.Label(window, text="This is a location and role note. It is not a seed.", font=("Courier", 9),
-             fg="#b3282d", bg="#fafaf8").pack(anchor="w", padx=18, pady=(4, 16))
+             fg=FLAG, bg=PAPER).pack(anchor="w", padx=18, pady=(4, 16))
 
 
 def canvas_psbt_flow(cv, medium):
@@ -1168,69 +1222,55 @@ def home_screen(app):
     app.dirty = False
     app.opened_format = None
     app.header()
-    f = ScrollFrame(app)
-    f.pack(fill="both", expand=True)
-    inner = f.inner
-    pad = tk.Frame(inner, bg=PAPER)
-    pad.pack(fill="both", expand=True, padx=60, pady=40)
+    frame = ScrollFrame(app)
+    frame.pack(fill="both", expand=True)
+    pad = tk.Frame(frame.inner, bg=PAPER)
+    pad.pack(fill="both", expand=True, padx=56, pady=32)
 
-    folio_label(pad, "Registry · Cold storage succession · Local network checks active").pack(anchor="w")
-    tk.Label(pad, text="The plan is the part that\nhas to survive you.", font=("Georgia", 26),
-             bg=PAPER, fg=INK, justify="left").pack(anchor="w", pady=(8, 16))
+    folio_label(pad, "Vault Folio · Cold storage inheritance guide").pack(anchor="w")
+    tk.Label(pad, text="The plan is the part that has to survive you.", font=("Georgia", 26),
+             bg=PAPER, fg=INK, justify="left", wraplength=820).pack(anchor="w", pady=(8, 18))
     if app.test_mode:
         tk.Label(pad, text="TEST MODE — SYNTHETIC DATA ONLY. ENVIRONMENT CHECKS ARE SKIPPED. "
                  "Only marked test files can be opened or saved. Enter no real inheritance details.",
-                 font=F_MONO_B, bg="#ffe0dc", fg=FLAG, justify="left", wraplength=680,
+                 font=F_MONO_B, bg=TEST_BG, fg=FLAG, justify="left", wraplength=760,
                  padx=12, pady=10).pack(fill="x", pady=(0, 14))
     elif app.ubuntu_test:
         tk.Label(pad, text="UBUNTU TEST — the air-gap lock is skipped. Encrypted save and the full guide are available. "
                  "This is not an offline session. Do not enter a real plan on a networked machine.",
-                 font=F_MONO_B, bg="#ffe0dc", fg=FLAG, justify="left", wraplength=680,
+                 font=F_MONO_B, bg=TEST_BG, fg=FLAG, justify="left", wraplength=760,
                  padx=12, pady=10).pack(fill="x", pady=(0, 14))
-    tk.Label(pad, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left", wraplength=680,
-             text="Vault Folio walks you through documenting how your Bitcoin cold storage is built — "
-                  "the quorum, the keys, the backups, the signing procedure, the inheritance path — then "
-                  "seals it into one encrypted file. That file is the brain of the plan: family, executor, "
-                  "or counsel open it years later and see exactly how to rebuild and recover what you built.").pack(anchor="w")
-    tk.Label(pad, font=F_BODY, bg=PAPER, fg="#2e2e2e", justify="left", wraplength=680,
-             text="It creates no keys. It signs nothing. It never asks for seed words — never enter them. "
-                  "It stores the map, not the treasure.").pack(anchor="w", pady=(10, 0))
 
-    modes = tk.Frame(pad, bg=PAPER)
-    modes.pack(fill="x", pady=26)
+    def action(title, sentence, button_text, command, primary):
+        card = tk.Frame(pad, bg=WHITE, highlightthickness=1, highlightbackground=LINE)
+        card.pack(fill="x", pady=8)
+        tk.Label(card, text=title, font=F_H2, bg=WHITE, fg=INK).pack(
+            anchor="w", padx=18, pady=(14, 2))
+        tk.Label(card, text=sentence, font=F_BODY, bg=WHITE, fg=BODY_TEXT,
+                 anchor="w", justify="left", wraplength=760).pack(
+            anchor="w", padx=18, pady=(0, 12))
+        tk.Button(card, text=button_text, font=F_MONO_B, relief="flat",
+                  padx=16, pady=10, cursor="hand2", bg=(INK if primary else PAPER2),
+                  fg=(PAPER if primary else INK), highlightthickness=1,
+                  highlightbackground=LINE, command=command).pack(
+            anchor="w", padx=18, pady=(0, 14))
 
-    def action(title, desc, btn, cmd, primary=False):
-        fr = tk.Frame(modes, bg=PAPER, highlightthickness=1, highlightbackground=INK)
-        fr.pack(fill="x", pady=8)
-        tk.Label(fr, text=title, font=("Georgia", 22), bg=PAPER, fg=INK).pack(anchor="w", padx=22, pady=(16, 4))
-        tk.Label(fr, text=desc, font=("Helvetica", 13), fg="#6b6b6b", bg=PAPER,
-                 justify="left", wraplength=720).pack(anchor="w", padx=22)
-        tk.Button(fr, text=btn, font=F_MONO_B, relief="flat", padx=16, pady=10, cursor="hand2",
-                  bg=(INK if primary else PAPER), fg=(PAPER if primary else INK),
-                  highlightthickness=1, highlightbackground=INK, command=cmd).pack(anchor="w", padx=22, pady=16)
+    action(
+        "Open a guide",
+        "Open an encrypted guide to read or update its instructions." if not app.test_mode else
+        "Open a marked synthetic test guide only.",
+        "OPEN TEST GUIDE" if app.test_mode else "OPEN GUIDE",
+        lambda: open_file_flow(app), True,
+    )
+    action(
+        "Start a guide",
+        "Answer a short interview, then complete the guide’s sheets." if not app.test_mode else
+        "Use invented answers to try the questionnaire and save flow.",
+        "START TEST GUIDE" if app.test_mode else "START THE GUIDE",
+        lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)),
+        False,
+    )
 
-    action("Open a guide",
-           "Open an encrypted file. You can edit it, or open the heir view.",
-           "OPEN A GUIDE", lambda: open_file_flow(app), True)
-    action("Start a new guide",
-           "One question at a time. It fills the sheets. It never asks for a seed or a key.",
-           "START THE GUIDE",
-           lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)))
-
-    tk.Label(pad, text="WHAT THE FILE CONTAINS — AND WHAT IT NEVER CONTAINS", font=F_MONO_B,
-             bg=PAPER, fg=INK).pack(anchor="w", pady=(14, 6))
-    rows = [("Quorum structure and script types", "Seed words / private keys"),
-            ("Which signer guards each key; where backups live", "Full xpub strings (descriptor copies live with the backups)"),
-            ("Descriptor-copy locations, rescan height, tested software", "Passphrases to seeds"),
-            ("Inheritance mechanism, trustee, heirs, release conditions", "Street-precise hiding places"),
-            ("Rehearsal log: restore drills, test spends", "Anything a thief could spend with directly")]
-    for a, b in rows:
-        r = tk.Frame(pad, bg=PAPER, highlightthickness=1, highlightbackground=LINE)
-        r.pack(fill="x", pady=1)
-        tk.Label(r, text=a, font=("Helvetica", 9), bg=PAPER, fg=INK, anchor="w",
-                 wraplength=330, justify="left", width=46).pack(side="left", padx=10, pady=6)
-        tk.Label(r, text=b, font=("Helvetica", 9), bg=PAPER, fg=FLAG, anchor="w",
-                 wraplength=330, justify="left").pack(side="left", padx=10, pady=6)
 
 
 def open_file_flow(app):
@@ -1332,9 +1372,14 @@ def show_heir(app, plan):
     def draw_diagrams(box, current_plan):
         tk.Label(box, text="SETUP, KEY PLACES, AND PEOPLE", font=("Courier", 9),
                  bg="#fafaf8", fg="#6b6b6b").pack(anchor="w", pady=(0, 6))
-        cv = tk.Canvas(box, bg="#fafaf8", highlightthickness=0)
+        family_map = tk.Frame(box, bg=PAPER)
+        family_map.pack(fill="x", pady=(0, 12))
+        cv = tk.Canvas(family_map, bg=PAPER, highlightthickness=0)
+        family_xscroll = tk.Scrollbar(family_map, orient="horizontal", command=cv.xview)
+        cv.configure(xscrollcommand=family_xscroll.set)
         canvas_family_map(cv, current_plan)
-        cv.pack(anchor="w", pady=(0, 12))
+        cv.pack(fill="x", expand=True)
+        family_xscroll.pack(fill="x")
         tk.Label(box, text="STEPS FOR THIS GUIDE", font=("Courier", 9),
                  bg="#fafaf8", fg="#6b6b6b").pack(anchor="w")
         for number, title, detail in heir_steps_for(current_plan):
@@ -1357,21 +1402,21 @@ def show_heir(app, plan):
 # Desktop questionnaire wizard
 # --------------------------------------------------------------------------
 STEP_DEFS = [
-    ("start", "Read this first"),
+    ("start", "Start"),
     ("identity", "Plan & owner"),
-    ("people", "Executors, trustees, heirs"),
-    ("custodians", "Lawyers & backup custodians"),
-    ("vaults", "Vault architecture & keys"),
-    ("signing", "How spending works"),
-    ("backups", "Descriptor & config backups"),
-    ("inventory", "Backup inventory & hints"),
-    ("paths", "Alternate recovery paths"),
-    ("access", "Journal & watch-only access"),
-    ("inheritance", "Inheritance mechanism"),
-    ("rehearsal", "Has it been tested?"),
-    ("instructions", "Family recovery steps"),
+    ("people", "People"),
+    ("custodians", "Custodians"),
+    ("vaults", "Vaults"),
+    ("signing", "Signing"),
+    ("backups", "Wallet map"),
+    ("inventory", "Backups"),
+    ("paths", "Recovery paths"),
+    ("access", "Access"),
+    ("inheritance", "Inheritance"),
+    ("rehearsal", "Rehearsal"),
+    ("instructions", "Family steps"),
     ("review", "Risk review"),
-    ("export", "Encrypt & export"),
+    ("export", "Export"),
 ]
 
 STEP_INTROS = {
@@ -1408,11 +1453,16 @@ class Wizard:
         shell = tk.Frame(app, bg=PAPER)
         shell.pack(fill="both", expand=True)
 
-        self.sidebar = ScrollFrame(shell)
+        self.sidebar = ScrollFrame(shell, bg=PAPER2)
+        self.sidebar.configure(width=245)
         self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        self.sidebar.canvas.configure(width=225, bg=PAPER2)
+        self.sidebar.inner.configure(bg=PAPER2)
         for i, (_, title) in enumerate(STEP_DEFS):
-            b = tk.Button(self.sidebar.inner, text=f"{i + 1:02d}  {title}", font=("Courier", 10), anchor="w",
-                          relief="flat", padx=14, pady=8, cursor="hand2", bg=PAPER2, fg="#6b6b6b",
+            b = tk.Button(self.sidebar.inner, text=f"{i + 1:02d}  {title}", font=("Courier", 9),
+                          anchor="w", justify="left", wraplength=205,
+                          relief="flat", padx=14, pady=8, cursor="hand2", bg=PAPER2, fg=HINT,
                           activebackground=INK, activeforeground=PAPER,
                           command=lambda n=i: self.goto(n))
             b.pack(fill="x")
@@ -1479,36 +1529,32 @@ class Wizard:
 
     # ---- form helpers -----------------------------------------------------
     def _label(self, parent, text, hint=""):
-        tk.Label(parent, text=text.upper(), font=("Courier", 9), fg="#2e2e2e", bg=PAPER,
+        tk.Label(parent, text=text.upper(), font=("Courier", 9), fg=BODY_TEXT, bg=PAPER,
                  anchor="w").pack(anchor="w", pady=(12, 2))
-        if hint:
-            tk.Label(parent, text=hint, font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER,
-                     anchor="w", justify="left", wraplength=620).pack(anchor="w")
+        tk.Label(parent, text=hint or "Add a short note only; never enter seeds, private keys, or descriptors.",
+                 font=("Helvetica", 9), fg=HINT, bg=PAPER,
+                 anchor="w", justify="left", wraplength=720).pack(anchor="w", pady=(0, 3))
 
     def entry(self, parent, label, path, hint=""):
-        self._label(parent, label, "")
+        self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
         v.trace_add("write", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
         e = tk.Entry(parent, textvariable=v, font=F_BODY, bg="#ffffff", fg=INK, relief="solid", bd=1)
         ui.focusable(e)
         e.pack(fill="x", ipady=3)
         e.bind("<Return>", lambda _event: (self.forward(), "break")[1])
-        if hint:
-            ui.hint_label(parent, hint).pack(anchor="w", pady=(2, 0))
         return v
 
     def combo(self, parent, label, path, options, hint=""):
-        self._label(parent, label, "")
+        self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
         cb = ttk.Combobox(parent, textvariable=v, values=options, state="readonly", font=F_BODY)
         cb.pack(fill="x")
         cb.bind("<<ComboboxSelected>>", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
-        if hint:
-            ui.hint_label(parent, hint).pack(anchor="w", pady=(2, 0))
         return v
 
     def text(self, parent, label, path, hint=""):
-        self._label(parent, label, "")
+        self._label(parent, label, hint)
         t = tk.Text(parent, height=4, font=F_BODY, bg="#ffffff", fg=INK, relief="solid", bd=1,
                     wrap="word")
         ui.focusable(t)
@@ -1519,8 +1565,6 @@ class Wizard:
             setp(self.plan, path, t.get("1.0", "end-1c"))
             self.mark_dirty()
         t.bind("<KeyRelease>", sync)
-        if hint:
-            ui.hint_label(parent, hint).pack(anchor="w", pady=(2, 0))
         return t
 
     def checkboxes(self, parent, label, path, pairs):
@@ -1546,6 +1590,7 @@ class Wizard:
         c = self.content.inner
         for w in c.winfo_children():
             w.destroy()
+        self.content.scroll_to_top()
         for i, b in enumerate(self.step_buttons):
             b.configure(bg=(INK if i == self.step else PAPER2),
                         fg=(PAPER if i == self.step else "#6b6b6b"))
@@ -1647,8 +1692,11 @@ class Wizard:
             inner.pack(fill="x", padx=10, pady=8)
 
             def row(lbl, key, opts=None, hint=""):
-                tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg="#ffffff", fg="#6b6b6b",
+                tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=WHITE, fg=HINT,
                          anchor="w").pack(anchor="w")
+                tk.Label(inner, text=hint or "Use a short note; never enter seeds or private keys.",
+                         font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w",
+                         wraplength=700, justify="left").pack(anchor="w")
                 if opts:
                     v = tk.StringVar(value=h.get(key, ""))
                     cb = ttk.Combobox(inner, textvariable=v, values=opts, state="readonly", font=("Helvetica", 10))
@@ -1658,9 +1706,6 @@ class Wizard:
                     v = tk.StringVar(value=h.get(key, ""))
                     v.trace_add("write", lambda *_: (h.__setitem__(key, v.get()), self.mark_dirty()))
                     tk.Entry(inner, textvariable=v, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
-                if hint:
-                    tk.Label(inner, text=hint, font=("Helvetica", 8), bg="#ffffff", fg="#6b6b6b",
-                             anchor="w", wraplength=560, justify="left").pack(anchor="w")
 
             row("Name", "name")
             row("Relationship", "relation")
@@ -1716,8 +1761,11 @@ class Wizard:
                 ui.btn_danger(header, "REMOVE", remove, side="right")
                 fields = record_fields(section, record)
                 for key, label, options in fields:
-                    tk.Label(frame, text=label, font=("Helvetica", 9), fg="#2e2e2e", bg="#ffffff",
-                             anchor="w", wraplength=580).pack(anchor="w", padx=12, pady=(6, 0))
+                    tk.Label(frame, text=label, font=("Helvetica", 9), fg=BODY_TEXT, bg=WHITE,
+                             anchor="w", wraplength=700).pack(anchor="w", padx=12, pady=(6, 0))
+                    tk.Label(frame, text="Use a short, recognizable note; never enter a seed or private key.",
+                             font=("Helvetica", 8), fg=HINT, bg=WHITE,
+                             anchor="w", wraplength=700, justify="left").pack(anchor="w", padx=12)
                     value = tk.StringVar(value=record.get(key, ""))
                     def update(*_, row=record, name=key, var=value):
                         row[name] = var.get()
@@ -1995,8 +2043,11 @@ class Wizard:
 
         def row(lbl, key, opts=None, hint="", obj=None):
             obj = obj if obj is not None else v
-            tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg="#ffffff", fg="#6b6b6b",
+            tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=WHITE, fg=HINT,
                      anchor="w").pack(anchor="w", pady=(8, 0))
+            tk.Label(inner, text=hint or "Use a short note; never enter seeds, keys, or descriptors.",
+                     font=("Helvetica", 8), bg=WHITE, fg=HINT,
+                     anchor="w", wraplength=700, justify="left").pack(anchor="w")
             if opts:
                 var = tk.StringVar(value=obj.get(key, ""))
                 cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=("Helvetica", 10))
@@ -2007,9 +2058,6 @@ class Wizard:
                 var = tk.StringVar(value=str(obj.get(key, "")))
                 var.trace_add("write", lambda *_: (obj.__setitem__(key, var.get()), self.mark_dirty()))
                 tk.Entry(inner, textvariable=var, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
-            if hint:
-                tk.Label(inner, text=hint, font=("Helvetica", 8), bg="#ffffff", fg="#6b6b6b",
-                         anchor="w", wraplength=580, justify="left").pack(anchor="w")
 
         row("Vault name", "name")
         row("Preset source / guide revision (optional)", "profileSource")
@@ -2019,16 +2067,18 @@ class Wizard:
             "larger no-timelock deep vault beats one script trying to do both.")
 
         qrow = tk.Frame(inner, bg="#ffffff")
-        tk.Label(inner, text="QUORUM  (M of N)", font=("Courier", 8), bg="#ffffff", fg="#6b6b6b",
+        tk.Label(inner, text="QUORUM  (M of N)", font=("Courier", 8), bg=WHITE, fg=HINT,
                  anchor="w").pack(anchor="w", pady=(8, 0))
+        tk.Label(inner, text="M is the required signer count; N is the total signer count.",
+                 font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w").pack(anchor="w")
         qrow.pack(fill="x")
         vm = tk.StringVar(value=str(v.get("m", "")))
         vn = tk.StringVar(value=str(v.get("n", "")))
         vm.trace_add("write", lambda *_: (v.__setitem__("m", int(vm.get()) if vm.get().isdigit() else ""), self.mark_dirty()))
         vn.trace_add("write", lambda *_: (v.__setitem__("n", int(vn.get()) if vn.get().isdigit() else ""), self.mark_dirty()))
-        tk.Entry(qrow, textvariable=vm, width=5, font=("Helvetica", 10), relief="solid", bd=1).pack(side="left")
+        tk.Entry(qrow, textvariable=vm, width=8, font=("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
         tk.Label(qrow, text=" OF ", font=F_MONO, bg="#ffffff").pack(side="left")
-        tk.Entry(qrow, textvariable=vn, width=5, font=("Helvetica", 10), relief="solid", bd=1).pack(side="left")
+        tk.Entry(qrow, textvariable=vn, width=8, font=("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
         tk.Label(inner, text="2-of-3 if a normal family must operate it. 3-of-5 when losing one site must not "
                              "matter. 3-of-7 is the loss-extreme — and a poor inheritance experience.",
                  font=("Helvetica", 8), bg="#ffffff", fg="#6b6b6b", anchor="w", wraplength=580,
@@ -2038,8 +2088,10 @@ class Wizard:
         row("Coordinator software", "coordinator", COORDS,
             "The coordinator builds transactions and holds the watch-only wallet. It must be replaceable.")
 
-        tk.Label(inner, text="TIMELOCKED RECOVERY PATH?", font=("Courier", 8), bg="#ffffff",
-                 fg="#6b6b6b", anchor="w").pack(anchor="w", pady=(8, 0))
+        tk.Label(inner, text="TIMELOCKED RECOVERY PATH?", font=("Courier", 8), bg=WHITE,
+                 fg=HINT, anchor="w").pack(anchor="w", pady=(8, 0))
+        tk.Label(inner, text="Record whether this policy has a delayed spending path.",
+                 font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w").pack(anchor="w")
         tl = v.get("timelock") or {}
         tlv = tk.StringVar(value=("yes" if tl.get("enabled") else ("no" if v.get("timelock") else "")))
         trow = tk.Frame(inner, bg="#ffffff")
@@ -2049,15 +2101,15 @@ class Wizard:
                            bg="#ffffff", activebackground="#ffffff", selectcolor="#ffffff",
                            command=lambda: self._set_timelock(v, tlv.get())).pack(side="left", padx=(0, 16))
         if tl.get("enabled"):
-            tk.Label(inner, text="TIMELOCK DETAILS", font=("Courier", 8), bg="#ffffff",
-                     fg="#6b6b6b", anchor="w").pack(anchor="w", pady=(6, 0))
+            tk.Label(inner, text="TIMELOCK DETAILS", font=("Courier", 8), bg=WHITE,
+                     fg=HINT, anchor="w").pack(anchor="w", pady=(6, 0))
+            tk.Label(inner, text="Prefer relative timelocks (OP_CSV): if the coins stay still, the path matures. "
+                                 "Absolute dates mature on schedule, even if spending is active.",
+                     font=("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w", wraplength=700,
+                     justify="left").pack(anchor="w")
             dv = tk.StringVar(value=tl.get("delay", ""))
             dv.trace_add("write", lambda *_: (tl.__setitem__("delay", dv.get()), self.mark_dirty()))
             tk.Entry(inner, textvariable=dv, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
-            tk.Label(inner, text="Prefer relative timelocks (OP_CSV): \u201cif these coins sit still, something is "
-                                 "wrong.\u201d Absolute dates open on the date even if you are actively spending.",
-                     font=("Helvetica", 8), bg="#ffffff", fg="#6b6b6b", anchor="w", wraplength=580,
-                     justify="left").pack(anchor="w")
 
         row("Notes", "notes", hint="Do not mix personal, trust, and business coins under one descriptor. "
                                    "Legal ownership should match who can sign.")
@@ -2105,8 +2157,12 @@ class Wizard:
         inner.pack(fill="x", padx=10, pady=6)
 
         def row(lbl, key, opts=None, hint=""):
-            tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=PAPER, fg="#6b6b6b",
+            tk.Label(inner, text=lbl.upper(), font=("Courier", 8), bg=PAPER, fg=HINT,
                      anchor="w").pack(anchor="w", pady=(6, 0))
+            tk.Label(inner, text=hint or "Describe the role or location only; never enter a seed or key.",
+                     font=("Helvetica", 8), bg=PAPER,
+                     fg=(FLAG if hint.startswith("⚠") else HINT), anchor="w",
+                     wraplength=700, justify="left").pack(anchor="w")
             if opts:
                 var = tk.StringVar(value=k.get(key, ""))
                 cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=("Helvetica", 10))
@@ -2117,9 +2173,6 @@ class Wizard:
                 var = tk.StringVar(value=k.get(key, ""))
                 var.trace_add("write", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty()))
                 tk.Entry(inner, textvariable=var, font=("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
-            if hint:
-                tk.Label(inner, text=hint, font=("Helvetica", 8), bg=PAPER, fg=("#b3282d" if hint.startswith("⚠") else "#6b6b6b"),
-                         anchor="w", wraplength=540, justify="left").pack(anchor="w")
 
         row("Label", "label", hint="e.g. Key A — home signer")
         dev_hint = ""
@@ -2186,20 +2239,24 @@ class Wizard:
         for i, d in enumerate(self.plan["backups"]["descriptorLocations"]):
             fr = tk.Frame(self.dloc_box, bg="#ffffff", highlightthickness=1, highlightbackground=LINE)
             fr.pack(fill="x", pady=2)
-            tk.Label(fr, text="WHERE", font=("Courier", 8), bg="#ffffff", fg="#6b6b6b").grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
+            tk.Label(fr, text="WHERE", font=("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
+            tk.Label(fr, text="Broad place alias or site name.", font=("Helvetica", 8), bg=WHITE,
+                     fg=HINT).grid(row=1, column=0, sticky="w", padx=8)
             v1 = tk.StringVar(value=d.get("where", ""))
             v1.trace_add("write", lambda *_: (d.__setitem__("where", v1.get()), self.mark_dirty()))
-            tk.Entry(fr, textvariable=v1, font=("Helvetica", 10), relief="solid", bd=1).grid(row=1, column=0, sticky="ew", padx=8)
-            tk.Label(fr, text="FORMAT", font=("Courier", 8), bg="#ffffff", fg="#6b6b6b").grid(row=0, column=1, sticky="w", padx=8, pady=(6, 0))
+            tk.Entry(fr, textvariable=v1, font=("Helvetica", 10), relief="solid", bd=1).grid(row=2, column=0, sticky="ew", padx=8)
+            tk.Label(fr, text="FORMAT", font=("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=1, sticky="w", padx=8, pady=(6, 0))
+            tk.Label(fr, text="Choose the stored copy type.", font=("Helvetica", 8), bg=WHITE,
+                     fg=HINT).grid(row=1, column=1, sticky="w", padx=8)
             v2 = tk.StringVar(value=d.get("format", ""))
             cb = ttk.Combobox(fr, textvariable=v2, font=("Helvetica", 10), state="readonly",
                               values=["Printed paper", "Plaintext digital file", "Encrypted digital file",
                                       "Wallet descriptor export (BSMS / Core / Sparrow)"], width=26)
-            cb.grid(row=1, column=1, sticky="ew", padx=8)
+            cb.grid(row=2, column=1, sticky="ew", padx=8)
             cb.bind("<<ComboboxSelected>>", lambda *_: (d.__setitem__("format", v2.get()), self.mark_dirty()))
             tk.Button(fr, text="✕", font=("Courier", 9), bg="#ffffff", fg=FLAG, relief="flat", cursor="hand2",
                       command=lambda i=i: (self.plan["backups"]["descriptorLocations"].pop(i),
-                                           self.mark_dirty(), self.draw_dlocs())).grid(row=1, column=2, padx=8)
+                                           self.mark_dirty(), self.draw_dlocs())).grid(row=2, column=2, padx=8)
             fr.columnconfigure(0, weight=3)
             fr.columnconfigure(1, weight=2)
 
