@@ -144,9 +144,12 @@ def apply_answer(state, key, value):
             state["heirs"].append(value)
         return None
     if key == "another":
-        state["wallets"].append(copy.deepcopy(draft))
-        state["draft"] = {}
-        if value != "yes":
+        if value == "yes":
+            state["wallets"].append(copy.deepcopy(draft))
+            state["draft"] = {}
+        else:
+            state["wallets"].append(copy.deepcopy(draft))
+            state["draft"] = {}
             state["wallets_done"] = True
         return None
     if key.startswith("key_"):
@@ -315,7 +318,7 @@ class _Interview:
         key, _title, _help, kind, _options = questions[self.index]
         value = self.value.get().strip()
         if kind == "choice" and not value:
-            self.messagebox.showinfo("Vault Folio", "Choose an answer, including \u201cI'm not sure.\u201d")
+            self.messagebox.showinfo("Vault Folio", "Choose an answer, including “I'm not sure.”")
             return
         self.history.append((copy.deepcopy(self.state), self.index))
         error = apply_answer(self.state, key, value)
@@ -352,7 +355,7 @@ class _Interview:
                  f"Wallets: {len(plan['vaults'])}",
                  f"First contact: {plan['people'].get('executor') or 'Not named'}"]
         for vault in plan["vaults"]:
-            lines.append(f"{vault.get('name')}: {vault.get('setupType')} \u2014 no seed stored")
+            lines.append(f"{vault.get('name')}: {vault.get('setupType')} — no seed stored")
         for line in lines:
             self.tk.Label(pad, text=line, font=("Helvetica", 12), bg="#fafaf8", anchor="w").pack(anchor="w", pady=2)
         self.tk.Button(pad, text="EDIT THE PLAN", command=lambda: self.start_editor(plan)).pack(anchor="w", pady=(18, 0))
