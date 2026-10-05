@@ -40,6 +40,48 @@ _COLOR_OPTIONS = ("bg", "background", "fg", "foreground", "activebackground",
                   "activeforeground", "selectcolor", "highlightbackground",
                   "highlightcolor", "insertbackground", "disabledforeground")
 
+# --- interface scale -------------------------------------------------------
+# `tk scaling` only resizes fonts specified in *points* (negative sizes) and
+# geometry in physical units. This app specifies every font in pixels, so the
+# slider alone changed nothing. Real scaling is done here: every font in the
+# app comes either from a registered module constant or from F(), and
+# set_scaling() rewrites those sources plus everything already on screen.
+MIN_SCALE, MAX_SCALE = 1.0, 2.4
+_factor = 1.0
+_base_tk_scaling = None          # display's own tk scaling, captured on first use
+_font_bases = {}                 # F() key -> unscaled pixel size
+_ns_font_bases = {}              # id(namespace) -> {name: (family, size, styles)}
+_named_bases = {}                # named font -> unscaled pixel size
+_NAMED_FONTS = ("TkDefaultFont", "TkTextFont", "TkFixedFont", "TkMenuFont",
+                "TkHeadingFont", "TkCaptionFont", "TkSmallCaptionFont",
+                "TkIconFont", "TkTooltipFont")
+_FONT_STYLES = ("bold", "italic", "underline", "overstrike")
+
+
+def _scaled(base):
+    return max(6, int(round(base * _factor)))
+
+
+def F(family, size, *styles):
+    """A font tuple at the current interface scale. Use for literal fonts."""
+    key = (family, int(size)) + tuple(styles)
+    _font_bases.setdefault(key, int(size))
+    return (family, _scaled(_font_bases[key])) + tuple(styles)
+
+
+def _is_font_tuple(value):
+    return (isinstance(value, tuple) and len(value) >= 2 and
+            isinstance(value[0], str) and value[0][:1].isalpha() and
+            isinstance(value[1], int) and value[1] > 0 and
+            all(str(extra) in _FONT_STYLES + ("normal", "roman") for extra in value[2:]))
+
+
+def _set_factor(value):
+    """Pure factor update; exported for tests. Returns the clamped factor."""
+    global _factor
+    _factor = min(MAX_SCALE, max(MIN_SCALE, float(value)))
+    return _factor
+
 
 def validate_themes():
     for name, theme in THEMES.items():
@@ -58,6 +100,11 @@ def get(role):
 def install(namespace):
     for role, constant in CONST_NAMES.items():
         namespace[constant] = get(role)
+    bases = {}
+    for name, value in namespace.items():
+        if _is_font_tuple(value):
+            bases[name] = (value[0], value[1], tuple(value[2:]))
+    _ns_font_bases[id(namespace)] = bases
     if namespace not in _registered:
         _registered.append(namespace)
 
@@ -66,6 +113,8 @@ def _sync():
     for namespace in _registered:
         for role, constant in CONST_NAMES.items():
             namespace[constant] = get(role)
+        for name, (family, size, styles) in _ns_font_bases.get(id(namespace), {}).items():
+            namespace[name] = (family, _scaled(size)) + styles
 
 
 def _repaint(widget, source):
@@ -122,17 +171,102 @@ def current_theme():
     return _current
 
 
+def _rescale_font(spec, old, new, root):
+    """Return a font spec rescaled from old factor to new, or None to skip.
+
+    Parses the spec string directly: a tkfont.Font probe would resolve a
+    missing family to its display fallback and bake that in permanently."""
+    try:
+        tokens = list(root.tk.splitlist(spec))
+    except tk.TclError:
+        return None
+    size_index = None
+    for index in range(len(tokens) - 1, -1, -1):
+        try:
+            int(tokens[index])
+            size_index = index
+            break
+        except ValueError:
+            continue
+    if size_index is None or size_index == 0:
+        return None  # named font or malformed: leave alone
+    size = int(tokens[size_index])
+    if size <= 0:
+        return None  # point-sized: already handled by `tk scaling`
+    family = " ".join(tokens[:size_index])
+    styles = tokens[size_index + 1:]
+    return (family, max(6, int(round(size / old * new)))) + tuple(styles)
+
+
+def _rescale(widget, old, new):
+    """Re-font every widget and canvas text item in the tree."""
+    def walk(w):
+        # Same boundary as _repaint: the lock overlay keeps its own look.
+        if (w is not widget and isinstance(w, tk.Toplevel) and
+                not getattr(w, "_folio_settings_dialog", False)):
+            return
+        try:
+            spec = str(w.cget("font"))
+        except tk.TclError:
+            spec = ""
+        if spec and spec not in _NAMED_FONTS:  # named fonts are scaled once, globally
+            try:
+                replacement = _rescale_font(spec, old, new, widget)
+                if replacement:
+                    w.configure(font=replacement)
+            except tk.TclError:
+                pass
+        if isinstance(w, tk.Canvas):
+            for item in w.find_all():
+                try:
+                    if w.type(item) != "text":
+                        continue
+                    spec = w.itemcget(item, "font")
+                    if spec:
+                        replacement = _rescale_font(str(spec), old, new, widget)
+                        if replacement:
+                            w.itemconfigure(item, font=replacement)
+                except tk.TclError:
+                    pass
+        for child in w.winfo_children():
+            walk(child)
+
+    walk(widget)
+
+
 def set_scaling(root, value):
-    value = min(2.4, max(1.0, float(value)))
-    root.tk.call("tk", "scaling", value)
-    return value
+    """Set the interface scale (1.0 = as designed). Returns the clamped value."""
+    global _base_tk_scaling
+    old = _factor
+    new = _set_factor(value)
+    if new == old:
+        return new
+    if _base_tk_scaling is None:
+        try:
+            _base_tk_scaling = float(root.tk.call("tk", "scaling"))
+        except (tk.TclError, ValueError):
+            _base_tk_scaling = 1.0
+    root.tk.call("tk", "scaling", _base_tk_scaling * new)
+    from tkinter import font as tkfont
+    for name in _NAMED_FONTS:  # widgets created without an explicit font
+        try:
+            named = tkfont.nametofont(name, root=root)
+        except tk.TclError:
+            continue
+        size = named.cget("size")
+        if size <= 0:
+            continue  # point-sized: `tk scaling` above already covers it
+        _named_bases.setdefault(name, size / old)
+        named.configure(size=max(6, int(round(_named_bases[name] * new))))
+    _sync()
+    import folio_ui as ui
+    ui.init_style(root)
+    _rescale(root, old, new)
+    return new
 
 
 def get_scaling(root):
-    try:
-        return round(float(root.tk.call("tk", "scaling")), 1)
-    except (tk.TclError, ValueError):
-        return 1.0
+    return round(_factor, 1)
 
 
 def open_settings(app):

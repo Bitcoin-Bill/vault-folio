@@ -1,7 +1,7 @@
 """Read-only, plain-language heir journey. Never executes a recovery or edits a plan."""
 import copy
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, simpledialog, ttk
 import folio_ui as ui
 from folio_catalog import record_fields
 
@@ -119,58 +119,99 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     app.clear()
     app.active_plan = plan
     app.header(status='BENEFICIARY VIEW · READ ONLY')
-    outer = tk.Frame(app, bg='#fafaf8')
+    outer = tk.Frame(app, bg=ui.PAPER)
     outer.pack(fill='both', expand=True, padx=24, pady=16)
-    tk.Label(outer, text='Your family’s recovery guide', font=('Georgia', 24), bg='#fafaf8').pack(anchor='w')
-    tk.Label(outer, text='One step at a time. No changes are saved in this view.', bg='#fafaf8').pack(anchor='w', pady=(4,16))
-    body = tk.Frame(outer, bg='#fafaf8'); body.pack(fill='both', expand=True)
-    nav = tk.Frame(body, bg='#f0efeb'); nav.pack(side='left', fill='y', padx=(0,18))
+    tk.Label(outer, text='Your family’s recovery guide', font=ui.F('Georgia', 24), bg=ui.PAPER, fg=ui.INK).pack(anchor='w')
+    tk.Label(outer, text='One step at a time. Notes can be saved back into the encrypted file.', bg=ui.PAPER).pack(anchor='w', pady=(4,16))
+    body = tk.Frame(outer, bg=ui.PAPER); body.pack(fill='both', expand=True)
+    nav = tk.Frame(body, bg=ui.PAPER2, width=360)
+    nav.pack(side='left', fill='y', padx=(0,18))
+    nav.pack_propagate(False)
     panel = tk.Frame(body, bg=ui.PAPER); panel.pack(side='left', fill='both', expand=True)
-    step_lbl = tk.Label(panel, font=('Courier', 9), fg=ui.HINT, bg=ui.PAPER, anchor='w')
+    step_lbl = tk.Label(panel, font=ui.F('Courier', 9), fg=ui.HINT, bg=ui.PAPER, anchor='w')
     step_lbl.pack(fill='x')
-    title = tk.Label(panel, font=('Georgia', 20), bg=ui.PAPER, fg=ui.INK, anchor='w', wraplength=760)
+    title = tk.Label(panel, font=ui.F('Georgia', 20), bg=ui.PAPER, fg=ui.INK, anchor='w', wraplength=760)
     title.pack(fill='x', pady=(2,10))
-    scroller = ui.ScrollFrame(panel)
-    scroller.pack(fill='both', expand=True)
-    diagram_box = tk.Frame(scroller.inner, bg=ui.PAPER)
-    diagram_box.pack(fill='x')
-    text = tk.Text(scroller.inner, wrap='word', font=('Helvetica', 13), height=12, padx=18, pady=16, relief='flat')
+    text = tk.Text(panel, wrap='word', font=ui.F('Helvetica', 14), padx=18, pady=16,
+                   relief='flat', bg=ui.WHITE, fg=ui.INK)
     text.pack(fill='both', expand=True)
+    diagram_box = tk.Frame(panel, bg=ui.PAPER)
+    diagram_box.pack(fill='x', before=text)
     index = [0]
     reveal = tk.BooleanVar(value=False)
     def render(number=None):
         if number is not None: index[0] = number
         steps = recovery_steps(plan, reveal.get())
-        total = len(steps) + 1  # + Full reference
+        total = len(steps) + 1
         if index[0] == len(steps):
             heading, content = 'Full reference (advanced)', full_reference(visible_plan(plan, reveal.get()))
         else:
             heading, content = steps[index[0]]
         step_lbl.configure(text=f'STEP {index[0] + 1} OF {total}')
         title.configure(text=heading)
+        text.configure(state='normal')
+        text.delete('1.0', 'end')
+        text.insert('1.0', content or 'Nothing was recorded for this step.')
+        text.configure(state='disabled')
         for w in diagram_box.winfo_children():
             w.destroy()
         if draw_diagrams is not None and heading in ('Start here', 'Understand what exists'):
-            draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
-        text.configure(state='normal');text.delete('1.0','end');text.insert('1.0',content);text.configure(state='disabled');text.yview_moveto(0)
+            try:
+                draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
+            except Exception:
+                tk.Label(diagram_box, text='The setup picture could not be drawn. The written steps below are still the guide.',
+                         bg=ui.PAPER, fg=ui.FLAG, wraplength=640, justify='left').pack(anchor='w')
+        text.yview_moveto(0)
         previous.configure(state='normal' if index[0] else 'disabled')
         next_button.configure(state='normal' if index[0] < len(steps) else 'disabled')
         choices.selection_clear(0, 'end')
         choices.selection_set(index[0])
         choices.see(index[0])
     count = len(recovery_steps(plan))
-    choices = tk.Listbox(nav, width=30, exportselection=False, font=('Helvetica',11),
-                         relief='flat', highlightthickness=0, activestyle='none')
+    choices = tk.Listbox(nav, width=36, exportselection=False, font=ui.F('Helvetica', 12),
+                         relief='flat', highlightthickness=0, activestyle='none',
+                         bg=ui.PAPER2, fg=ui.INK, selectbackground=ui.INK, selectforeground=ui.PAPER)
     choices.pack(side='left', fill='both', expand=True)
     nav_scroll = ttk.Scrollbar(nav, command=choices.yview)
     nav_scroll.pack(side='right', fill='y')
     choices.configure(yscrollcommand=nav_scroll.set)
+    choices.insert('end', 'Overview')
     for i,(heading,_) in enumerate(recovery_steps(plan)):
         choices.insert('end', f'{i+1}. {heading}')
     choices.insert('end', f'{count+1}. Full reference')
     choices.bind('<<ListboxSelect>>', lambda _: render(choices.curselection()[0]) if choices.curselection() else None)
-    tk.Checkbutton(outer, text='Show direct journal / watch-only access details on screen', variable=reveal, command=render, bg='#fafaf8').pack(anchor='w', pady=10)
-    bottom=tk.Frame(outer,bg='#fafaf8');bottom.pack(fill='x')
+    notes = tk.Text(outer, height=4, wrap='word', font=ui.F('Helvetica', 12), bg=ui.WHITE, fg=ui.INK)
+    notes.insert('1.0', str(plan.get('heirNotes') or ''))
+    notes.pack(fill='x', pady=(8, 4))
+    checks = plan.setdefault('heirChecklist', {})
+    check_row = tk.Frame(outer, bg=ui.PAPER)
+    check_row.pack(fill='x')
+    for number, (heading, _detail) in enumerate(recovery_steps(plan), start=1):
+        var = tk.BooleanVar(value=bool(checks.get(number)))
+        tk.Checkbutton(check_row, text=str(number) + ' ' + heading, variable=var, bg=ui.PAPER, fg=ui.INK,
+                       command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
+    def save_notes():
+        plan['heirNotes'] = notes.get('1.0', 'end-1c')
+        path = getattr(app, 'guide_path', '')
+        if not path:
+            messagebox.showinfo('Vault Folio', 'Open the encrypted file again, then save the notes.')
+            return
+        password = simpledialog.askstring('Vault Folio', 'Enter the guide passphrase to save these notes:', show='*', parent=app)
+        if not password:
+            return
+        try:
+            from folio_security import seal
+            from folio_storage import save_encrypted
+            save_encrypted(path, seal(plan, [{'kind': 'passphrase', 'label': 'Guide passphrase', 'passphrase': password}]))
+        except Exception as exc:
+            messagebox.showerror('Vault Folio', str(exc))
+            return
+        finally:
+            password = None
+        messagebox.showinfo('Vault Folio', 'Notes and checklist were saved into the encrypted file.')
+    tk.Button(outer, text='SAVE NOTES INTO ENCRYPTED FILE', command=save_notes).pack(anchor='w', pady=6)
+    tk.Checkbutton(outer, text='Show direct journal / watch-only access details on screen', variable=reveal, command=render, bg=ui.PAPER).pack(anchor='w', pady=10)
+    bottom=tk.Frame(outer,bg=ui.PAPER);bottom.pack(fill='x')
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
     next_button=ui.btn_primary(bottom,'NEXT STEP →',lambda:render(index[0]+1));next_button.pack_configure(side='left',padx=8)
     ui.btn_secondary(bottom,'CLOSE GUIDE & CLEAR SESSION',close,side='right')

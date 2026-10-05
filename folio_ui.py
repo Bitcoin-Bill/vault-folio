@@ -5,12 +5,15 @@ styles so every screen looks and behaves the same. Importing this module has
 no side effects until init_style() is called with a live Tk root.
 """
 import tkinter as tk
+import folio_theme as _theme
 from tkinter import ttk
 
 INK, PAPER, PAPER2, LINE, FLAG, OK = "#0a0a0a", "#fafaf8", "#f2f1ec", "#c9c7bf", "#b3282d", "#2e6b4f"
 WHITE = "#ffffff"
 HINT = "#6b6b6b"
 BODY_TEXT = "#2e2e2e"
+WARN_BG, WARN_TEXT, DIM, INK_SOFT, TEST_BG = "#fff1f2", "#8a6408", "#555555", "#333333", "#ffe0dc"
+F = _theme.F  # scale-aware literal font: ui.F_theme.F("Georgia", 22)
 
 F_H2 = ("Georgia", 22)
 F_H3 = ("Georgia", 16)
@@ -27,21 +30,32 @@ def install_scrolling(root):
         return
     root._folio_scroll_installed = True
 
-    def target(widget):
+    def targets(widget):
+        inner = None
+        sheet = None
         while widget is not None:
-            if isinstance(widget, (tk.Text, tk.Listbox, tk.Canvas)) and widget.winfo_class() != "Canvas":
-                return widget
             if isinstance(widget, ScrollFrame):
-                return widget
+                sheet = widget
+            elif inner is None and isinstance(widget, (tk.Text, tk.Listbox)):
+                inner = widget
             widget = getattr(widget, "master", None)
-        return None
+        return inner, sheet
 
     def roll(event, direction):
-        widget = target(event.widget)
-        if isinstance(widget, ScrollFrame):
-            widget.canvas.yview_scroll(direction, "units")
-        elif widget is not None:
-            widget.yview_scroll(direction, "units")
+        inner, sheet = targets(event.widget)
+        if inner is not None:
+            first, last = map(float, inner.yview())
+            can_scroll_inner = (direction < 0 and first > 0) or (direction > 0 and last < 1)
+            if can_scroll_inner:
+                inner.yview_scroll(direction, "units")
+            elif sheet is not None:
+                sheet.canvas.yview_scroll(direction, "units")
+            else:
+                inner.yview_scroll(direction, "units")
+        elif sheet is not None:
+            sheet.canvas.yview_scroll(direction, "units")
+        if inner is not None or sheet is not None:
+            return "break"
 
     root.bind_all("<MouseWheel>", lambda event: roll(event, -1 if event.delta > 0 else 1))
     root.bind_all("<Button-4>", lambda event: roll(event, -3))
@@ -66,6 +80,10 @@ class ScrollFrame(tk.Frame):
     def _fit(self, _event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self.canvas.itemconfig(self._win, width=self.canvas.winfo_width())
+
+    def scroll_to_top(self):
+        """Start at the beginning when a sheet's contents are replaced."""
+        self.after_idle(lambda: self.canvas.yview_moveto(0))
 
 
 def init_style(root):
@@ -102,7 +120,7 @@ def init_style(root):
 
 def btn_primary(parent, text, command, **pack_kw):
     b = tk.Button(parent, text=text, font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-                  padx=14, pady=8, cursor="hand2", activebackground="#333333",
+                  padx=14, pady=8, cursor="hand2", activebackground=INK_SOFT,
                   activeforeground=PAPER, command=command)
     if pack_kw:
         b.pack(**pack_kw)
@@ -119,8 +137,8 @@ def btn_secondary(parent, text, command, **pack_kw):
 
 
 def btn_danger(parent, text, command, **pack_kw):
-    b = tk.Button(parent, text=text, font=("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
-                  padx=8, pady=4, cursor="hand2", activebackground="#ffe0dc",
+    b = tk.Button(parent, text=text, font=_theme.F("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
+                  padx=8, pady=4, cursor="hand2", activebackground=TEST_BG,
                   activeforeground=FLAG, command=command)
     if pack_kw:
         b.pack(**pack_kw)
