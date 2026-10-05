@@ -1,4 +1,4 @@
-# CSIP — Cold Storage Inheritance Package
+# Vault-Folio — Cold Storage Inheritance Package
 
 For synthetic test mode and its limitations, see
 [RAM-SESSION.md](docs/RAM-SESSION.md). It skips all environment checks and
