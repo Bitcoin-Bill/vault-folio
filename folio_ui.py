@@ -27,21 +27,32 @@ def install_scrolling(root):
         return
     root._folio_scroll_installed = True
 
-    def target(widget):
+    def targets(widget):
+        inner = None
+        sheet = None
         while widget is not None:
-            if isinstance(widget, (tk.Text, tk.Listbox, tk.Canvas)) and widget.winfo_class() != "Canvas":
-                return widget
             if isinstance(widget, ScrollFrame):
-                return widget
+                sheet = widget
+            elif inner is None and isinstance(widget, (tk.Text, tk.Listbox)):
+                inner = widget
             widget = getattr(widget, "master", None)
-        return None
+        return inner, sheet
 
     def roll(event, direction):
-        widget = target(event.widget)
-        if isinstance(widget, ScrollFrame):
-            widget.canvas.yview_scroll(direction, "units")
-        elif widget is not None:
-            widget.yview_scroll(direction, "units")
+        inner, sheet = targets(event.widget)
+        if inner is not None:
+            first, last = map(float, inner.yview())
+            can_scroll_inner = (direction < 0 and first > 0) or (direction > 0 and last < 1)
+            if can_scroll_inner:
+                inner.yview_scroll(direction, "units")
+            elif sheet is not None:
+                sheet.canvas.yview_scroll(direction, "units")
+            else:
+                inner.yview_scroll(direction, "units")
+        elif sheet is not None:
+            sheet.canvas.yview_scroll(direction, "units")
+        if inner is not None or sheet is not None:
+            return "break"
 
     root.bind_all("<MouseWheel>", lambda event: roll(event, -1 if event.delta > 0 else 1))
     root.bind_all("<Button-4>", lambda event: roll(event, -3))
@@ -66,6 +77,10 @@ class ScrollFrame(tk.Frame):
     def _fit(self, _event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self.canvas.itemconfig(self._win, width=self.canvas.winfo_width())
+
+    def scroll_to_top(self):
+        """Start at the beginning when a sheet's contents are replaced."""
+        self.after_idle(lambda: self.canvas.yview_moveto(0))
 
 
 def init_style(root):
