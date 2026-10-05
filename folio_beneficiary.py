@@ -205,6 +205,6 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
     next_button=ui.btn_primary(bottom,'NEXT STEP →',lambda:render(index[0]+1));next_button.pack_configure(side='left',padx=8)
     if edit_plan is not None:
-        ui.btn_primary(bottom, 'EDIT THIS GUIDE', edit_plan, side='left', padx=8)
+        ui.btn_primary(bottom, 'EDITOR VIEW', edit_plan, side='left', padx=8)
     ui.btn_secondary(bottom,'CLOSE GUIDE & CLEAR SESSION',close,side='right')
     render()
