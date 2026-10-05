@@ -1,3 +1,8 @@
+> RAM policy update: real sessions now require verified RAM-backed Linux system
+> paths, disabled swap and process dump protection in addition to the network
+> gate. The hardware arrangements below are necessary but not sufficient.
+> Read [RAM-SESSION.md](RAM-SESSION.md) before use.
+
 # Operational security — how and where to run Vault Folio
 
 The app is designed so that *where* and *how* you run it matters more than the
@@ -33,10 +38,9 @@ materials.
 
 **Best** — a live USB on stripped hardware:
 boot a live Linux USB **with persistence disabled** on a machine whose wireless
-card is physically removed. Copy `vault-folio.py` onto the live session (or a
-ramdisk) and run it from there. The OS writes nothing to disk; the app writes
-nothing but the files you export; RAM is volatile — when you shut down, the
-session is gone.
+card is physically removed. Copy `vault-folio.py` and all `folio_*.py` companion modules onto the live session (or a
+ramdisk) and run it from there. The app intentionally writes only encrypted exports. The OS must be configured
+for nonpersistent operation; this does not guarantee secure RAM erasure.
 
 Verify the tool on any machine before trusting it:
 
@@ -46,9 +50,10 @@ python3 vault-folio.py --self-test
 
 ## What the app writes — and what it never writes
 
-The app holds your plan in memory only. It never creates temp files, logs,
+The app holds your plan in memory only. It never creates plaintext temp files, application logs,
 caches, or config directories, and it suppresses Python's bytecode cache. The
-only disk writes are files you choose yourself in a Save dialog:
+only plan disk writes are ciphertext: a temporary sibling followed by atomic
+replacement of the file you choose in a Save dialog:
 
 - the encrypted plan (`*.csp.json`) — safe to copy widely, though it reveals
   structure if the passphrase is also obtained.
@@ -61,8 +66,8 @@ held with the trustee), not to a cloud-synced folder.
 
 ## The passphrase road
 
-The encrypted file and its passphrase must never travel together. If the
-passphrase dies with you, the file is a brick. Recommended: sealed copy of the
+The encrypted file and its passphrase must never travel together. If every enrolled
+unlock method is lost, the file cannot be recovered. Recommended: sealed copy of the
 passphrase with the trustee, plus separate instructions telling heirs who holds
 it. Memorized-only passphrases are a theft feature and an inheritance bug.
 
@@ -85,3 +90,30 @@ push you, and the research notes in `docs/research/` explain the reasoning:
 distribute the quorum geographically, keep the descriptor copies current,
 run a restore drill, do a small test spend, walk the family through it while
 you are alive. An untested backup is a story.
+
+
+
+## Hardware unlock only protects access to this guide
+
+A dedicated compatible YubiKey may unlock the encrypted guide; it never holds
+Bitcoin seed words or a Bitcoin signing key for this application. See
+[YUBIKEY.md](YUBIKEY.md). Any one enrolled key, passphrase or complete question set opens the guide.
+Keep tested alternative access with appropriate separate custodians. Never enter wallet
+passphrases, seeds or backup-share words into any of these fields.
+
+Once unlocked, the guide and unlock material exist in host RAM. Malware can
+capture the response, passphrase or plaintext, then exfiltrate later. A touch
+confirms physical presence, not the legitimacy of the application or challenge.
+The hardware cannot protect a compromised host. The OS environment check does
+not prove absence of malware, hidden networking, swap, crash dumps or firmware
+compromise. Unplugging the YubiKey does not erase the open guide or lock the UI.
+
+Setup tools can expose the HMAC provisioning secret when configuring a key.
+Provision only on a trusted offline machine. Vault Folio never programs or
+changes a key. Its CLI adapter captures responses in memory and suppresses
+third-party diagnostics. It cannot independently attest that touch is required;
+verify that setting and test it before enrolling a key.
+
+Keep a minimal non-secret discovery note OUTSIDE this package: how heirs find
+the encrypted file, the offline app, and the separate unlock custodian. Otherwise
+instructions explaining how to unlock the guide may be locked inside it.
