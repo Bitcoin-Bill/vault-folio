@@ -1199,31 +1199,23 @@ def home_screen(app):
     modes = tk.Frame(pad, bg=PAPER)
     modes.pack(fill="x", pady=26)
 
-    def mode(parent, folio, title, desc, btn, cmd, primary, enabled=True):
-        fr = tk.Frame(parent, bg=PAPER, highlightthickness=1, highlightbackground=INK)
-        fr.pack(side="left", fill="both", expand=True, padx=(0, 1))
-        tk.Label(fr, text=folio.upper(), font=("Courier", 8), fg="#6b6b6b", bg=PAPER).pack(anchor="w", padx=18, pady=(14, 4))
-        tk.Label(fr, text=title, font=F_H2, bg=PAPER, fg=INK).pack(anchor="w", padx=18)
-        tk.Label(fr, text=desc, font=("Helvetica", 9), fg="#6b6b6b", bg=PAPER,
-                 justify="left", wraplength=330).pack(anchor="w", padx=18, pady=(6, 12))
-        tk.Button(fr, text=btn, font=F_MONO_B, relief="flat", padx=14, pady=8, cursor="hand2",
+    def action(title, desc, btn, cmd, primary=False):
+        fr = tk.Frame(modes, bg=PAPER, highlightthickness=1, highlightbackground=INK)
+        fr.pack(fill="x", pady=8)
+        tk.Label(fr, text=title, font=("Georgia", 22), bg=PAPER, fg=INK).pack(anchor="w", padx=22, pady=(16, 4))
+        tk.Label(fr, text=desc, font=("Helvetica", 13), fg="#6b6b6b", bg=PAPER,
+                 justify="left", wraplength=720).pack(anchor="w", padx=22)
+        tk.Button(fr, text=btn, font=F_MONO_B, relief="flat", padx=16, pady=10, cursor="hand2",
                   bg=(INK if primary else PAPER), fg=(PAPER if primary else INK),
-                  highlightthickness=1, highlightbackground=INK,
-                  state=("normal" if enabled else "disabled"), command=cmd).pack(
-                      anchor="w", padx=18, pady=(0, 16))
+                  highlightthickness=1, highlightbackground=INK, command=cmd).pack(anchor="w", padx=22, pady=16)
 
-    mode(modes, "Mode · 01 · Open", "Open a synthetic test file" if app.test_mode else "Open a cold storage plan file",
-         "Choose a .csp / .json plan file and enter its passphrase. Owners edit and re-seal. "
-         "Family, executors, and counsel get the guided recovery runbook." if not app.test_mode else
-         "Only marked synthetic test files can be opened in test mode.",
-         "OPEN TEST FILE (.CSP)" if app.test_mode else "OPEN PLAN FILE (.CSP)",
-         lambda: open_file_flow(app), True, enabled=True)
-    mode(modes, "Mode · 02 · Owner", "Create a test questionnaire" if app.test_mode else "Create a new guide",
-         "A short interview fills the guide. You then edit the sheets. "
-         "It never asks for a seed or a key." if not app.test_mode else
-         "Explore with invented answers, then save and reopen a marked encrypted test file. Do not enter real details.",
-         "START TEST QUESTIONNAIRE" if app.test_mode else "START THE GUIDE",
-         lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)), False)
+    action("Open a guide",
+           "Open an encrypted file. You can edit it, or open the heir view.",
+           "OPEN A GUIDE", lambda: open_file_flow(app), True)
+    action("Start a new guide",
+           "One question at a time. It fills the sheets. It never asks for a seed or a key.",
+           "START THE GUIDE",
+           lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)))
 
     tk.Label(pad, text="WHAT THE FILE CONTAINS — AND WHAT IT NEVER CONTAINS", font=F_MONO_B,
              bg=PAPER, fg=INK).pack(anchor="w", pady=(14, 6))
@@ -1416,15 +1408,15 @@ class Wizard:
         shell = tk.Frame(app, bg=PAPER)
         shell.pack(fill="both", expand=True)
 
-        self.sidebar = tk.Frame(shell, bg=PAPER2, highlightthickness=1, highlightbackground=LINE)
+        self.sidebar = ScrollFrame(shell)
         self.sidebar.pack(side="left", fill="y")
         for i, (_, title) in enumerate(STEP_DEFS):
-            b = tk.Button(self.sidebar, text=f"{i + 1:02d}  {title}", font=("Courier", 9), anchor="w",
+            b = tk.Button(self.sidebar.inner, text=f"{i + 1:02d}  {title}", font=("Courier", 10), anchor="w",
                           relief="flat", padx=14, pady=8, cursor="hand2", bg=PAPER2, fg="#6b6b6b",
                           activebackground=INK, activeforeground=PAPER,
                           command=lambda n=i: self.goto(n))
             b.pack(fill="x")
-        self.step_buttons = list(self.sidebar.winfo_children())
+        self.step_buttons = list(self.sidebar.inner.winfo_children())
 
         right = tk.Frame(shell, bg=PAPER)
         right.pack(side="left", fill="both", expand=True)
@@ -1584,6 +1576,7 @@ class Wizard:
     def render(self):
         sid = STEP_DEFS[self.step][0]
         getattr(self, "page_" + sid)()
+        self.content.canvas.yview_moveto(0)
 
     # ---- folio 00 ---------------------------------------------------------
     def page_start(self):

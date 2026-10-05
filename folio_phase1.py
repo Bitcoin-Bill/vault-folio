@@ -332,8 +332,8 @@ class _Interview:
         self.restore_value = None
         if kind == "choice":
             for value, label in options:
-                self.tk.Radiobutton(pad, text=label, value=value, variable=self.value,
-                                    font=("Helvetica", 12), bg="#fafaf8", anchor="w").pack(anchor="w", pady=3)
+                self.tk.Button(pad, text=label, font=("Helvetica", 14), anchor="w",
+                               command=lambda chosen=value: self.answer(chosen)).pack(fill="x", pady=4, ipady=8)
         else:
             entry = self.tk.Entry(pad, textvariable=self.value, font=("Helvetica", 13), width=52)
             entry.pack(anchor="w", ipady=6)
