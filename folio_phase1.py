@@ -4,6 +4,7 @@ The interview fills the existing plan sheets. The current editor remains the
 place to add or change answers afterward.
 """
 import copy
+import re
 from datetime import date
 
 
@@ -18,8 +19,8 @@ def rejects_secret(text):
     raw = (text or "").strip()
     if not raw:
         return False
-    low = raw.lower()
-    if any(mark in low for mark in ("seed phrase", "private key", "xprv", "xpub", "recovery phrase")):
+    low = re.sub(r"[_-]+", " ", raw.casefold())
+    if re.search(r"\b(?:seed(?:\s+(?:phrase|words?))?|private\s+key|secret\s+key|xprv|xpub|recovery\s+(?:phrase|words?))\b", low):
         return True
     words = [word.strip(".,;:").lower() for word in raw.split()]
     return 12 <= len(words) <= 24 and all(word.isalpha() and len(word) <= 10 for word in words)
@@ -59,9 +60,13 @@ def interview_questions(state):
     structure = draft.get("structure")
     if structure == "single":
         questions.append(("backup_copies", "Is the backup of that key in one place, or more than one?",
-                          "Name the kind of place, such as home safe or bank box. Not the seed words.",
+                          "This asks only how many places hold a copy. Not the seed words.",
                           "choice", [("one", "One place"), ("several", "More than one place"),
                                      ("unsure", "I'm not sure")]))
+        if draft.get("backup_copies"):
+            questions.append(("backup_where", "Where are the backup copies kept?",
+                              "A broad description such as home safe or bank box is enough. Never enter backup words.",
+                              "text", None))
     elif structure == "multi":
         questions.append(("n", "How many separate keys are there?",
                           "Count keys, not backup copies. Use 2 to 12, or not sure.", "number", None))
@@ -119,8 +124,10 @@ def interview_questions(state):
 
 def _clear_dependents(draft, key):
     if key == "structure":
-        for stale in ("backup_copies", "n", "m", "keys", "delayed", "delayed_kind", "delay", "config_where", "another"):
+        for stale in ("backup_copies", "backup_where", "n", "m", "keys", "delayed", "delayed_kind", "delay", "config_where", "another"):
             draft.pop(stale, None)
+    elif key == "backup_copies":
+        draft.pop("backup_where", None)
     elif key == "n":
         draft.pop("m", None)
         draft.pop("keys", None)
@@ -219,7 +226,7 @@ def build_plan(state):
         if structure == "single":
             record.update({"m": 1, "n": 1, "script": "Single-signature (one key)",
                            "backupCopyArrangement": wallet.get("backup_copies") or "unsure"})
-            record["keys"] = [{"label": "Key A", "locations": wallet.get("backup_copies") or ""}]
+            record["keys"] = [{"label": "Key A", "locations": wallet.get("backup_where") or ""}]
         elif structure == "multi":
             record.update({"m": wallet.get("m") if isinstance(wallet.get("m"), int) else "",
                            "n": wallet.get("n") if isinstance(wallet.get("n"), int) else "",
@@ -269,6 +276,7 @@ class _Interview:
         self.history = []
         self.index = 0
         self.value = tk.StringVar()
+        self.restore_value = None
 
     def show(self):
         self.app.clear()
@@ -291,7 +299,8 @@ class _Interview:
                       wraplength=720, justify="left").pack(anchor="w", pady=(8, 8))
         self.tk.Label(pad, text=help_text, font=("Helvetica", 11), bg="#fafaf8", fg="#2e2e2e",
                       wraplength=720, justify="left").pack(anchor="w", pady=(0, 16))
-        self.value.set("")
+        self.value.set(self.restore_value if self.restore_value is not None else "")
+        self.restore_value = None
         if kind == "choice":
             for value, label in options:
                 self.tk.Radiobutton(pad, text=label, value=value, variable=self.value,
@@ -320,10 +329,10 @@ class _Interview:
         if kind == "choice" and not value:
             self.messagebox.showinfo("Vault Folio", "Choose an answer, including “I'm not sure.”")
             return
-        self.history.append((copy.deepcopy(self.state), self.index))
+        self.history.append((copy.deepcopy(self.state), self.index, value))
         error = apply_answer(self.state, key, value)
         if error:
-            self.state, self.index = self.history.pop()
+            self.state, self.index, _answer = self.history.pop()
             self.messagebox.showinfo("Vault Folio", error)
             return
         if key == "another" and value == "yes":
@@ -340,7 +349,7 @@ class _Interview:
         if not self.history:
             self.on_cancel()
             return
-        self.state, self.index = self.history.pop()
+        self.state, self.index, self.restore_value = self.history.pop()
         self.render()
 
     def finish(self):
