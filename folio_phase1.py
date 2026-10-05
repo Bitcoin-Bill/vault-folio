@@ -37,12 +37,31 @@ def _wallet_ready(draft):
     if structure == "single":
         return bool(draft.get("backup_copies"))
     if structure == "multi":
-        return draft.get("n") == "unsure" or isinstance(draft.get("m"), int)
+        return draft.get("n") == "unsure" or isinstance(draft.get("m"), int) or draft.get("m") == "unsure"
     return True
+
+
+def _people_questions():
+    return [
+        ("contact", "Who should your family contact first?",
+         "A name or role. This person is not asked for a key.", "text", None),
+        ("heir", "Who else should be named as an heir?",
+         "Leave blank if there is no one else to add.", "text", None),
+        ("map_holder", "Who holds these instructions but no key?",
+         "Leave blank if that is the same person as the first contact.", "text", None),
+        ("restored", "Has anyone restored this without you?",
+         "An untested backup is only a story.",
+         "choice", [("yes", "Yes"), ("no", "Not yet"), ("unsure", "I'm not sure")]),
+        ("test_spend", "Has there been a small test spend?",
+         "A small spend the family controlled. Do not enter a transaction key.",
+         "choice", [("yes", "Yes"), ("no", "Not yet"), ("unsure", "I'm not sure")]),
+    ]
 
 
 def interview_questions(state):
     """Return the questions still relevant for this state. Later answers drop out."""
+    if state.get("wallets_done"):
+        return _people_questions()
     draft = state["draft"]
     questions = [
         ("plan_name", "What should this plan be called?",
@@ -83,7 +102,7 @@ def interview_questions(state):
                         (f"key_where_{i}", f"Where does the backup for key {i + 1} live?",
                          "A non-secret place. Not the backup words.", "text", None),
                     ])
-    if draft.get("name") and (structure != "multi" or draft.get("n") == "unsure" or isinstance(draft.get("m"), int)):
+    if draft.get("name") and (structure != "multi" or draft.get("n") == "unsure" or isinstance(draft.get("m"), int) or draft.get("m") == "unsure"):
         questions.append(("delayed", "Is there a way to spend if those people cannot act?",
                           "A date written here does not lock bitcoin.",
                           "choice", [("no", "No"), ("yes", "Yes, after a delay"), ("unsure", "I'm not sure")]))
@@ -105,21 +124,7 @@ def interview_questions(state):
                           "choice", [("yes", "Yes, another setup"), ("no", "No, continue")]))
     if not state.get("wallets_done"):
         return questions
-    questions.extend([
-        ("contact", "Who should your family contact first?",
-         "A name or role. This person is not asked for a key.", "text", None),
-        ("heir", "Who else should be named as an heir?",
-         "Leave blank if there is no one else to add.", "text", None),
-        ("map_holder", "Who holds these instructions but no key?",
-         "Leave blank if that is the same person as the first contact.", "text", None),
-        ("restored", "Has anyone restored this without you?",
-         "An untested backup is only a story.",
-         "choice", [("yes", "Yes"), ("no", "Not yet"), ("unsure", "I'm not sure")]),
-        ("test_spend", "Has there been a small test spend?",
-         "A small spend the family controlled. Do not enter a transaction key.",
-         "choice", [("yes", "Yes"), ("no", "Not yet"), ("unsure", "I'm not sure")]),
-    ])
-    return questions
+    return _people_questions()
 
 
 def _clear_dependents(draft, key):
@@ -169,8 +174,6 @@ def apply_answer(state, key, value):
         return None
     if key in ("n", "m"):
         if value == "unsure":
-            if key == "m":
-                return "Choose not sure for the total first, or enter how many must agree."
             draft[key] = "unsure"
             _clear_dependents(draft, key)
             return None
@@ -215,8 +218,11 @@ def build_plan(state):
         "rehearsal": {"restoreDrill": state.get("restored") or "", "familyWalkthrough": "",
                       "testSpendDate": "", "notes": ""},
         "ownerNotes": "Started from the phase-1 setup interview. Seeds and keys were not requested.",
+        "recoveryPaths": [],
     }
-    any_delay = False
+    any_onchain = False
+    any_provider = False
+    any_unknown_delay = False
     any_multi = False
     for wallet in wallets:
         structure = wallet.get("structure") if wallet.get("structure") in ("single", "multi") else "unknown"
@@ -239,17 +245,32 @@ def build_plan(state):
             record.update({"m": "", "n": "", "script": "Not sure yet"})
         if wallet.get("delayed") == "yes" and wallet.get("delayed_kind") == "onchain":
             record["timelock"] = {"enabled": True, "delay": wallet.get("delay") or ""}
-            any_delay = True
+            any_onchain = True
+        elif wallet.get("delayed") == "yes" and wallet.get("delayed_kind") == "provider":
+            any_provider = True
+            plan["recoveryPaths"].append({
+                "label": f"{record['name']} delayed route", "vault": record["name"],
+                "mechanism": "Provider-enforced off-chain delay",
+            })
         elif wallet.get("delayed") == "yes":
-            any_delay = True
+            any_unknown_delay = True
+            plan["recoveryPaths"].append({
+                "label": f"{record['name']} delayed route", "vault": record["name"],
+                "mechanism": "Other / custom",
+                "dependencies": "A delayed route was reported, but its mechanism is unknown.",
+            })
         if wallet.get("config_where"):
             plan["backups"]["descriptorLocations"].append(
                 {"where": wallet["config_where"], "format": "Wallet configuration copy"})
         plan["vaults"].append(record)
-    if any_multi and any_delay:
+    if any_multi and (any_onchain or any_provider or any_unknown_delay):
         plan["inheritance"]["mechanism"] = "Combination of the above"
-    elif any_delay:
+    elif any_onchain:
         plan["inheritance"]["mechanism"] = "On-chain timelock decay — recovery path opens after inactivity (Liana/Nunchuk style)"
+    elif any_provider:
+        plan["inheritance"]["mechanism"] = "A provider, trustee, or other person releases access after a delay"
+    elif any_unknown_delay:
+        plan["inheritance"]["mechanism"] = "Other / custom"
     elif any_multi:
         plan["inheritance"]["mechanism"] = "Distributed keys — heirs reach a quorum via trustee/executor after death"
     else:
@@ -337,6 +358,10 @@ class _Interview:
             return
         if key == "another" and value == "yes":
             self.index = next(i for i, item in enumerate(interview_questions(self.state)) if item[0] == "structure")
+            self.render()
+            return
+        if key == "another" and value == "no":
+            self.index = next(i for i, item in enumerate(interview_questions(self.state)) if item[0] == "contact")
             self.render()
             return
         if key == "test_spend":

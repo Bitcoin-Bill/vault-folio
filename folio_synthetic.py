@@ -60,4 +60,6 @@ def load_synthetic_plan(path, passphrase):
         raise ValueError("This test file could not be opened.") from exc
     except (json.JSONDecodeError, UnicodeError, OSError) as exc:
         raise ValueError("This test file could not be opened.") from exc
+    if not isinstance(envelope, dict):
+        raise ValueError("This test file could not be opened.")
     return open_synthetic_envelope(envelope, passphrase)
