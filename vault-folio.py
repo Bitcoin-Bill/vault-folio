@@ -798,24 +798,42 @@ def canvas_family_map(cv, plan):
     rule = f"{m}-of-{n}" if m and n else (vault.get("setupType") or "setup")
     cv.create_rectangle(mx, 16, 280, 78, fill="#ffffff", outline="#0a0a0a")
     cv.create_text(mx + 12, 34, anchor="w", text="THIS SETUP", font=("Courier", 8), fill="#6b6b6b")
-    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=("Courier", 11, "bold"))
-    cv.create_text(300, 48, anchor="w", text=str(rule).upper(), font=("Courier", 11, "bold"), fill="#b3282d")
+    cv.create_text(mx + 12, 56, anchor="w", text=_short(vault.get("name") or "Unnamed setup", 24), font=("Courier", 11, "bold"), tags=("setup",))
+    cv.create_rectangle(mx, 16, 280, 78, fill="#ffffff", outline="#0a0a0a", tags=("setup",))
+    cv.create_text(300, 48, anchor="w", text=str(rule).upper() + "  · click a card", font=("Courier", 11, "bold"), fill="#b3282d")
+    cv.tag_bind("setup", "<Button-1>", lambda _e, v=vault: show_tree_detail("This setup", [
+        ("Name", v.get("name") or "Unnamed setup"),
+        ("Rule", rule),
+        ("Type", v.get("setupType") or "Not recorded"),
+        ("Delay", (v.get("timelock") or {}).get("delay") or "None recorded"),
+    ]))
     for i in range(n):
         x = mx + i * (key_w + gap)
         y = 108
         key = keys[i]
         cv.create_line(150, 78, x + key_w / 2, y, fill="#c9c7bf")
-        cv.create_rectangle(x, y, x + key_w, y + 108, fill="#ffffff", outline="#0a0a0a")
-        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 8), fill="#6b6b6b")
-        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=("Courier", 10, "bold"))
-        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(key.get("notes") or "Not named", 18), font=("Courier", 8))
-        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(key.get("locations") or "Not recorded", 20), font=("Courier", 8), fill="#2e6b4f")
+        tag = f"key{i}"
+        cv.create_rectangle(x, y, x + key_w, y + 108, fill="#ffffff", outline="#0a0a0a", tags=(tag,))
+        cv.create_text(x + 10, y + 18, anchor="w", text=f"KEY {i + 1}", font=("Courier", 8), fill="#6b6b6b", tags=(tag,))
+        cv.create_text(x + 10, y + 40, anchor="w", text=_short(key.get("label") or "Not named", 20), font=("Courier", 10, "bold"), tags=(tag,))
+        cv.create_text(x + 10, y + 62, anchor="w", text="holds: " + _short(key.get("notes") or "Not named", 18), font=("Courier", 8), tags=(tag,))
+        cv.create_text(x + 10, y + 84, anchor="w", text="place: " + _short(key.get("locations") or "Not recorded", 20), font=("Courier", 8), fill="#2e6b4f", tags=(tag,))
+        cv.tag_bind(tag, "<Button-1>", lambda _e, k=key, n=i: show_tree_detail(f"Key {n + 1}", [
+            ("Label", k.get("label") or "Not named"),
+            ("Holder", k.get("notes") or "Not named"),
+            ("Place", k.get("locations") or "Not recorded"),
+            ("Device", k.get("device") or "Not recorded"),
+        ]))
     for i, (label, value) in enumerate(people_cards):
         x = mx + i * 210
         y = 240
-        cv.create_rectangle(x, y, x + 196, y + 72, fill="#ffffff", outline="#0a0a0a")
-        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=("Courier", 8), fill="#6b6b6b")
-        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=("Courier", 10, "bold"))
+        tag = f"person{i}"
+        cv.create_rectangle(x, y, x + 196, y + 72, fill="#ffffff", outline="#0a0a0a", tags=(tag,))
+        cv.create_text(x + 10, y + 18, anchor="w", text=label, font=("Courier", 8), fill="#6b6b6b", tags=(tag,))
+        cv.create_text(x + 10, y + 44, anchor="w", text=_short(value or "Not named", 22), font=("Courier", 10, "bold"), tags=(tag,))
+        cv.tag_bind(tag, "<Button-1>", lambda _e, title=label, who=value: show_tree_detail(title, [("Name", who)]))
+    cv.tag_bind("setup", "<Enter>", lambda _e: cv.configure(cursor="hand2"))
+    cv.bind("<Button-1>", lambda _e: cv.configure(cursor="hand2"))
 
 
 def heir_steps_for(plan):
@@ -834,6 +852,21 @@ def heir_steps_for(plan):
         ("4", "Follow " + str(rule), "Copies of one key still count as one key."),
         ("5", "Collect backups from " + place, "Do not gather every secret on one computer."),
     ]
+
+
+def show_tree_detail(title, rows):
+    window = tk.Toplevel()
+    window.title(title)
+    window.configure(bg="#fafaf8")
+    tk.Label(window, text=title, font=("Georgia", 18), bg="#fafaf8").pack(anchor="w", padx=18, pady=(16, 8))
+    for label, value in rows:
+        tk.Label(window, text=label, font=("Courier", 9), fg="#6b6b6b", bg="#fafaf8").pack(anchor="w", padx=18)
+        tk.Label(window, text=value, font=("Helvetica", 13), bg="#fafaf8", wraplength=420, justify="left").pack(anchor="w", padx=18, pady=(0, 8))
+    tk.Label(window, text="This is a location and role note. It is not a seed.", font=("Courier", 9),
+             fg="#b3282d", bg="#fafaf8").pack(anchor="w", padx=18, pady=(4, 16))
+
+
+def canvas_psbt_flow(cv, medium):
     w, h, wall = 700, 226, 352
     med = _short(medium or "QR codes / removable media, as recorded in the plan", 40)
     cv.configure(width=w, height=h)
