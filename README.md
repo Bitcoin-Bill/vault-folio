@@ -15,7 +15,7 @@ built, with pictures and step-by-step instructions.
 It creates no keys. It signs nothing. It never asks for seed words.
 **It stores the map, not the treasure.**
 
-Developer preview, online and not the app: [browser-edition/preview.html](browser-edition/preview.html). Purpose: [docs/APP-PURPOSE.md](docs/APP-PURPOSE.md). Do not enter a real plan there.
+Developer preview, online and not the app: [browser-edition/app.html](browser-edition/app.html). Purpose: [docs/APP-PURPOSE.md](docs/APP-PURPOSE.md). Do not enter a real plan there.
 
 ## What it never does
 

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vault Folio — full functionality preview</title>
+  <style>
+    :root { --ink:#1c1917; --paper:#f7f4ee; --card:#fff; --line:#e7e0d4; --muted:#57534e; --flag:#9f1239; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:18px/1.45 Georgia, serif; }
+    header { position:sticky; top:0; z-index:5; background:#fff1f2; color:var(--flag); border-bottom:2px solid var(--flag); padding:14px 20px; }
+    header strong { display:block; font:700 13px/1.3 ui-monospace, monospace; letter-spacing:.04em; }
+    header p { margin:4px 0 0; font:15px/1.4 Helvetica, Arial, sans-serif; }
+    .shell { display:flex; min-height:calc(100vh - 78px); }
+    nav { width:280px; background:#f3efe6; border-right:1px solid var(--line); padding:12px; }
+    nav button { display:block; width:100%; text-align:left; margin:0 0 4px; }
+    main { flex:1; padding:28px 32px 80px; max-width:980px; }
+    h1 { font-size:36px; line-height:1.1; margin:0 0 8px; }
+    h2 { font-size:28px; margin:0 0 8px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; margin-top:16px; }
+    p, label, li { font-family:Helvetica, Arial, sans-serif; }
+    .muted { color:var(--muted); }
+    button, input, select, textarea { font:16px/1.3 Helvetica, Arial, sans-serif; }
+    button { border:1px solid var(--ink); background:#fff; border-radius:10px; padding:10px 14px; cursor:pointer; }
+    button.primary { background:var(--ink); color:#fff; }
+    button:disabled { opacity:.4; }
+    input, select, textarea { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; margin:6px 0 12px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    .modal { position:fixed; inset:0; background:rgba(28,25,23,.45); display:flex; align-items:center; justify-content:center; }
+    .modal .card { width:min(520px, 92vw); }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>ONLINE PREVIEW — NOT THE AIR-GAPPED APP</strong>
+    <p>This copy shows the full guide flow in a browser. Do not enter a seed, private key, xpub, real passphrase, or private plan. Invented answers only. A saved file from this page is a demo seal, not a Vault Folio desktop file.</p>
+  </header>
+  <div class="shell">
+    <nav id="nav"></nav>
+    <main id="main"></main>
+  </div>
+  <script>
+    const sections = ["Home","Interview","Plan & owner","People","Setups","Spending","Backups","Inheritance","Rehearsal","Risk review","Seal demo","Heir view"];
+    const plan = { name:"", owner:"", region:"", fileWhere:"", contact:"", heir:"", structure:"", setupName:"", copies:"", delayed:"", mechanism:"", tested:"", notes:"" };
+    let screen = 0, qIndex = 0;
+    const questions = [
+      ["name","What should this plan be called?","A family label, such as House savings. Not a seed."],
+      ["owner","Whose bitcoin does this plan describe?","The owner’s name. This guide never collects a key."],
+      ["region","What country or region should a lawyer be told?","A country or province. It does not choose the law by itself."],
+      ["fileWhere","Where should the sealed guide be found?","A broad place, such as with the executor."],
+      ["structure","One key, or several keys that must agree?","Copies of one backup are still one key.","choice",[["single","One key"],["multi","Several keys must agree"],["unsure","I'm not sure"]]],
+      ["setupName","What should the family call this setup?","For example, household savings."],
+      ["copies","Where are the backup copies kept?","A broad place. Never type backup words."],
+      ["delayed","Is there a way to spend if those people cannot act?","A date here does not lock bitcoin.","choice",[["no","No"],["yes","Yes, after a delay"],["unsure","I'm not sure"]]],
+      ["contact","Who should the family contact first?","A person or role. They are not asked for a key."],
+      ["heir","Who else should be named?","Leave blank if there is no one else."],
+      ["tested","Has anyone restored this without you?","An untested backup is only a story.","choice",[["yes","Yes"],["no","Not yet"],["unsure","I'm not sure"]]]
+    ];
+    function seedish(v){ const t=(v||"").toLowerCase(); if(/seed|private key|xprv|xpub|recovery phrase/.test(t)) return true; const w=t.split(/\s+/).filter(Boolean); return w.length>=12 && w.length<=24 && w.every(x=>/^[a-z]+$/.test(x)); }
+    function esc(v){ return String(v||"").replace(/[&<>"]/g,c=>({"&":"&","<":"<",">":">",'"':"""}[c])); }
+    function help(text){ alert(text+"\n\nDo not enter a seed, key, or private detail."); }
+    function field(key,label,hint){ return `<label>${label} <button type="button" onclick="help('${hint.replace(/'/g,"")}')">?</button></label><input id="${key}" value="${esc(plan[key])}">`; }
+    function drawNav(){ document.getElementById("nav").innerHTML = sections.map((name,i)=>`<button ${i===screen?"class=primary":""} onclick="go(${i})">${String(i+1).padStart(2,"0")}  ${name}</button>`).join(""); }
+    function go(n){ screen=n; render(); }
+    function saveFields(){ document.querySelectorAll("input,textarea,select").forEach(el=>{ if(plan.hasOwnProperty(el.id)) plan[el.id]=el.value; }); }
+    function render(){
+      drawNav();
+      const main=document.getElementById("main");
+      if(screen===0) main.innerHTML=`<h1>The plan is the part that has to survive you.</h1><p class="muted">Vault Folio writes an inheritance guide. It stores the map, not the treasure.</p><div class="card"><button class="primary" onclick="go(1)">Start the guide</button><button onclick="go(2)">Open the sheets</button></div>`;
+      else if(screen===1) renderQuestion();
+      else if(screen===2) main.innerHTML=`<h2>Plan and owner</h2><div class="card">${field("name","Plan name","A short name the family will recognize.")}${field("owner","Owner","Whose bitcoin this guide describes.")}${field("region","Region","Country or province for the lawyer.")}${field("fileWhere","Where the sealed file lives","A broad place, not a seed location.")}<button class="primary" onclick="saveFields();go(3)">Continue</button></div>`;
+      else if(screen===3) main.innerHTML=`<h2>People</h2><div class="card">${field("contact","First contact","Who the family calls first.")}${field("heir","Heir","Another person to name.")}<p class="muted">A helper can explain the guide without holding a key.</p><button class="primary" onclick="saveFields();go(4)">Continue</button></div>`;
+      else if(screen===4) main.innerHTML=`<h2>Setup</h2><div class="card">${field("setupName","Setup name","What the family calls this setup.")}<label>Structure <button type="button" onclick="help('One key, or several that must agree.')">?</button></label><select id="structure"><option>single</option><option>multi</option><option>unsure</option></select>${field("copies","Backup places","Broad places only.")}<button class="primary" onclick="saveFields();go(5)">Continue</button></div>`;
+      else if(screen===5) main.innerHTML=`<h2>How spending works</h2><div class="card"><p>Record the procedure, not a seed. A signer is a tool. The steps have to survive.</p><textarea id="notes" placeholder="Invented signing notes">${esc(plan.notes)}</textarea><button class="primary" onclick="saveFields();go(6)">Continue</button></div>`;
+      else if(screen===6) main.innerHTML=`<h2>Backups</h2><div class="card"><p>Some setups need a configuration copy to recover. Do not type the descriptor or seed here.</p>${field("copies","Where the configuration copy lives","A broad place.")}<button class="primary" onclick="saveFields();go(7)">Continue</button></div>`;
+      else if(screen===7) main.innerHTML=`<h2>Inheritance</h2><div class="card"><p>Bitcoin cannot read a death certificate. A person with a missing key, or a documented delay, is what the guide can describe.</p><label>Delay <button type="button" onclick="help('A written delay does not lock bitcoin.')">?</button></label><select id="delayed"><option>no</option><option>yes</option><option>unsure</option></select><button class="primary" onclick="saveFields();go(8)">Continue</button></div>`;
+      else if(screen===8) main.innerHTML=`<h2>Has it been tested?</h2><div class="card">${field("tested","Restore without you","Yes, not yet, or not sure.")}<button class="primary" onclick="saveFields();go(9)">Continue</button></div>`;
+      else if(screen===9) main.innerHTML=`<h2>Risk review</h2><div class="card"><p>${plan.tested==="yes"?"A restore was reported.":"Warning: no restore is documented. An untested backup is only a story."}</p><p>${plan.structure==="unsure"?"Warning: the signing rule is unknown.":"Setup rule: "+esc(plan.structure||"not set")}</p><p>No seed is stored.</p><button class="primary" onclick="go(10)">Continue</button></div>`;
+      else if(screen===10) main.innerHTML=`<h2>Seal demo</h2><div class="card"><p class="warn">This button opens a passphrase window for the demo only. It does not create a desktop Vault Folio file.</p><button class="primary" onclick="passphrasePopup()">Add passphrase</button><button onclick="go(11)">Heir view</button></div>`;
+      else main.innerHTML=`<h2>Heir view</h2><div class="card"><p>Step 1. Read this first. This guide does not contain a seed.</p><p>Step 2. Contact ${esc(plan.contact||"the named person")}.</p><p>Step 3. The setup is ${esc(plan.structure||"not recorded")}: ${esc(plan.setupName||"unnamed")}.</p><p>Step 4. The sealed file was said to live at ${esc(plan.fileWhere||"an unnamed place")}.</p><button onclick="go(0)">Home</button></div>`;
+      const sel=document.getElementById("structure"); if(sel) sel.value=plan.structure||"single";
+      const del=document.getElementById("delayed"); if(del) del.value=plan.delayed||"no";
+    }
+    function renderQuestion(){
+      const q=questions[qIndex];
+      const main=document.getElementById("main");
+      if(!q){ screen=2; render(); return; }
+      const choice=(q[4]||[]).map(([v,l])=>`<button data-v="${v}">${l}</button>`).join("");
+      main.innerHTML=`<p class="muted">Question ${qIndex+1} of ${questions.length}</p><h2>${q[1]} <button onclick="help('${q[2].replace(/'/g,"")}')">?</button></h2><p class="muted">${q[2]}</p><div class="card">${q[3]==="choice"?choice:'<input id="ans">'}<div class="row"><button onclick="qIndex=Math.max(0,qIndex-1);renderQuestion()">Back</button>${q[3]==="choice"?"":'<button class="primary" onclick="take(document.getElementById(\\'ans\\').value)">Next</button>'}</div></div>`;
+      document.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>take(b.dataset.v));
+    }
+    function take(value){ if(seedish(value)){ alert("Refused. Use an invented label."); return; } plan[questions[qIndex][0]]=value.trim(); qIndex++; renderQuestion(); }
+    function passphrasePopup(){
+      const modal=document.createElement("div"); modal.className="modal";
+      modal.innerHTML=`<div class="card"><h2>Guide passphrase</h2><p>This opens the demo file. It is not a bitcoin seed passphrase. Invent one.</p><input id="p1" type="password" placeholder="At least 12 characters"><input id="p2" type="password" placeholder="Type it again"><label><input id="show" type="checkbox" style="width:auto"> Show passphrase</label><div class="row"><button class="primary" id="use">Use this passphrase</button><button id="cancel">Cancel</button></div></div>`;
+      document.body.appendChild(modal);
+      modal.querySelector("#show").onchange=e=>{ const t=e.target.checked?"text":"password"; modal.querySelector("#p1").type=t; modal.querySelector("#p2").type=t; };
+      modal.querySelector("#cancel").onclick=()=>modal.remove();
+      modal.querySelector("#use").onclick=async()=>{
+        const a=modal.querySelector("#p1").value, b=modal.querySelector("#p2").value;
+        if(a.length<12||a!==b){ alert("The two entries must match and contain at least 12 characters."); return; }
+        const blob=new Blob([JSON.stringify({demo:true,warning:"Not a desktop Vault Folio file",plan},null,2)],{type:"application/json"});
+        const url=URL.createObjectURL(blob); const link=document.createElement("a"); link.href=url; link.download="vault-folio-demo.json"; link.click();
+        modal.remove(); alert("Demo file downloaded. It is not the encrypted desktop format.");
+      };
+    }
+    render();
+  </script>
+</body>
+</html>

@@ -10,4 +10,4 @@ The real app is the desktop program `vault-folio.py`. It is meant for an air-gap
 
 `browser-edition/preview.html` is a functionality preview for other developers. It runs online in a browser. It is not the app.
 
-Do not enter a seed, a private key, a real passphrase, or a private plan. The page does not encrypt or save answers. Use invented labels only.
+Do not enter a seed, a private key, a real passphrase, or a private plan. The full browser copy is `browser-edition/app.html`. It walks the interview, the sheets, the risk note, the passphrase window, and the heir view. It is still an online preview. Do not enter a real plan. A file it downloads is a demo, not a desktop Vault Folio seal.
