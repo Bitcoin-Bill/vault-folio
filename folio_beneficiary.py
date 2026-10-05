@@ -130,34 +130,36 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     step_lbl.pack(fill='x')
     title = tk.Label(panel, font=('Georgia', 20), bg=ui.PAPER, fg=ui.INK, anchor='w', wraplength=760)
     title.pack(fill='x', pady=(2,10))
-    scroller = ui.ScrollFrame(panel)
-    scroller.pack(fill='both', expand=True)
-    diagram_box = tk.Frame(scroller.inner, bg=ui.PAPER)
-    diagram_box.pack(fill='x')
-    text = tk.Text(scroller.inner, wrap='word', font=('Helvetica', 13), height=12, padx=18, pady=16, relief='flat', bg=ui.WHITE, fg=ui.INK, disabledforeground=ui.INK)
+    text = tk.Text(panel, wrap='word', font=('Helvetica', 14), padx=18, pady=16,
+                   relief='flat', bg=ui.WHITE, fg=ui.INK, disabledforeground=ui.INK)
     text.pack(fill='both', expand=True)
+    diagram_box = tk.Frame(panel, bg=ui.PAPER)
+    diagram_box.pack(fill='x', before=text)
     index = [0]
     reveal = tk.BooleanVar(value=False)
     def render(number=None):
         if number is not None: index[0] = number
         steps = recovery_steps(plan, reveal.get())
-        total = len(steps) + 1  # + Full reference
+        total = len(steps) + 1
         if index[0] == len(steps):
             heading, content = 'Full reference (advanced)', full_reference(visible_plan(plan, reveal.get()))
         else:
             heading, content = steps[index[0]]
         step_lbl.configure(text=f'STEP {index[0] + 1} OF {total}')
         title.configure(text=heading)
+        text.configure(state='normal')
+        text.delete('1.0', 'end')
+        text.insert('1.0', content or 'Nothing was recorded for this step.')
+        text.configure(state='disabled')
         for w in diagram_box.winfo_children():
             w.destroy()
         if draw_diagrams is not None and heading in ('Start here', 'Understand what exists'):
-            draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
-        text.configure(state='normal')
-        text.delete('1.0', 'end')
-        text.insert('1.0', content)
-        text.configure(state='disabled')
+            try:
+                draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
+            except Exception:
+                tk.Label(diagram_box, text='The setup picture could not be drawn. The written steps below are still the guide.',
+                         bg=ui.PAPER, fg=ui.FLAG, wraplength=640, justify='left').pack(anchor='w')
         text.yview_moveto(0)
-        scroller.scroll_to_top()
         previous.configure(state='normal' if index[0] else 'disabled')
         next_button.configure(state='normal' if index[0] < len(steps) else 'disabled')
         choices.selection_clear(0, 'end')

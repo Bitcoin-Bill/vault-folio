@@ -782,7 +782,11 @@ def canvas_family_map(cv, plan):
     vaults = plan.get("vaults") or [{}]
     vault = vaults[0]
     keys = list(vault.get("keys") or [])
-    n = int(vault.get("n") or len(keys) or 1)
+    n = vault.get("n") or len(keys) or 1
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = len(keys) or 1
     m = vault.get("m") or ""
     while len(keys) < n:
         keys.append({})
