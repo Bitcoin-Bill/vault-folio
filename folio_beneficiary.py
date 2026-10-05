@@ -142,6 +142,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     def render(number=None):
         if number is not None: index[0] = number
         steps = recovery_steps(plan, reveal.get())
+        index[0] = max(0, min(index[0], len(steps)))  # len(steps) = Full reference
         total = len(steps) + 1
         if index[0] == len(steps):
             heading, content = 'Full reference (advanced)', full_reference(visible_plan(plan, reveal.get()))
@@ -175,7 +176,6 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     nav_scroll = ttk.Scrollbar(nav, command=choices.yview)
     nav_scroll.pack(side='right', fill='y')
     choices.configure(yscrollcommand=nav_scroll.set)
-    choices.insert('end', 'Overview')
     for i,(heading,_) in enumerate(recovery_steps(plan)):
         choices.insert('end', f'{i+1}. {heading}')
     choices.insert('end', f'{count+1}. Full reference')
@@ -187,7 +187,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None):
     check_row = tk.Frame(outer, bg=ui.PAPER)
     check_row.pack(fill='x')
     for number, (heading, _detail) in enumerate(recovery_steps(plan), start=1):
-        var = tk.BooleanVar(value=bool(checks.get(number)))
+        var = tk.BooleanVar(value=bool(checks.get(str(number))))
         tk.Checkbutton(check_row, text=str(number) + ' ' + heading, variable=var, bg=ui.PAPER, fg=ui.INK,
                        command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
     def save_notes():

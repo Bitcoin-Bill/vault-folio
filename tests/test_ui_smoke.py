@@ -68,6 +68,51 @@ class ScreenConstructionTests(unittest.TestCase):
         self.vf.Wizard(self.app, self.plan())
         self.app.update_idletasks()
 
+
+    def test_heir_nav_every_row_renders_without_errors(self):
+        """Regression: the sidebar used raw listbox indices, shifting every row
+        and crashing on 'Full reference' with an IndexError."""
+        import tkinter as tk
+        errors = []
+        tk.Tk.report_callback_exception = lambda _self, *a: errors.append(a[1])
+        self.vf.show_heir(self.app, self.plan())
+        self.app.update_idletasks()
+        listboxes = []
+        def find(widget):
+            if isinstance(widget, tk.Listbox):
+                listboxes.append(widget)
+            for child in widget.winfo_children():
+                find(child)
+        find(self.app)
+        nav = listboxes[0]
+        first_row_label = str(nav.get(0))
+        self.assertTrue(first_row_label.startswith("1."), first_row_label)
+        for row in range(nav.size()):
+            nav.selection_clear(0, "end")
+            nav.selection_set(row)
+            nav.event_generate("<<ListboxSelect>>")
+            self.app.update_idletasks()
+        self.assertEqual(errors, [])
+
+    def test_heir_checklist_state_survives_reopen(self):
+        """Regression: checklist keys were written as str but read as int,
+        so saved checkmarks always came back unchecked."""
+        import tkinter as tk
+        plan = self.plan()
+        plan["heirChecklist"] = {"1": True}
+        self.vf.show_heir(self.app, plan)
+        self.app.update_idletasks()
+        boxes = []
+        def find(widget):
+            if isinstance(widget, tk.Checkbutton):
+                boxes.append(widget)
+            for child in widget.winfo_children():
+                find(child)
+        find(self.app)
+        checklist = [b for b in boxes if str(b.cget("text"))[0].isdigit()]
+        self.assertTrue(checklist, "no checklist rendered")
+        self.assertEqual(checklist[0].getvar(checklist[0].cget("variable")), True)
+
     def test_detail_window_constructs(self):
         self.vf.show_tree_detail("Key 1", [("Holder", "Ada"), ("Location", "home safe")])
         self.app.update_idletasks()
