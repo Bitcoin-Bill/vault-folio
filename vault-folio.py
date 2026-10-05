@@ -1477,7 +1477,25 @@ def confirm_alter_saved_guide(app, plan):
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 current = json.load(handle)
-            decrypt_plan(current, pw)
+            if isinstance(current, dict) and current.get("magic") == HARDWARE_MAGIC:
+                from folio_security import open_package
+                methods = current.get("methods") or []
+                passphrase_indexes = [i for i, item in enumerate(methods)
+                                      if (item.get("meta") or {}).get("kind") == "passphrase"]
+                if not passphrase_indexes:
+                    raise ValueError("This guide has no passphrase method.")
+                last_error = None
+                for index in passphrase_indexes:
+                    try:
+                        open_package(current, method_index=index, credential=pw)
+                        last_error = None
+                        break
+                    except ValueError as exc:
+                        last_error = exc
+                if last_error is not None:
+                    raise last_error
+            else:
+                decrypt_plan(current, pw)
         except (OSError, ValueError, TypeError, UnicodeError):
             messagebox.showerror(APP_NAME, "That passphrase does not open this file. The guide was not opened for changes.", parent=app)
             return
