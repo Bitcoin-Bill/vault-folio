@@ -21,7 +21,52 @@ F_MONO_B = ("Courier", 13, "bold")
 F_BADGE = ("Courier", 11, "bold")
 
 
-def init_style(root):
+def install_scrolling(root):
+    """Route the wheel to the list or sheet under the pointer. Bind once."""
+    if getattr(root, "_folio_scroll_installed", False):
+        return
+    root._folio_scroll_installed = True
+
+    def target(widget):
+        while widget is not None:
+            if isinstance(widget, (tk.Text, tk.Listbox, tk.Canvas)) and widget.winfo_class() != "Canvas":
+                return widget
+            if isinstance(widget, ScrollFrame):
+                return widget
+            widget = getattr(widget, "master", None)
+        return None
+
+    def roll(event, direction):
+        widget = target(event.widget)
+        if isinstance(widget, ScrollFrame):
+            widget.canvas.yview_scroll(direction, "units")
+        elif widget is not None:
+            widget.yview_scroll(direction, "units")
+
+    root.bind_all("<MouseWheel>", lambda event: roll(event, -1 if event.delta > 0 else 1))
+    root.bind_all("<Button-4>", lambda event: roll(event, -3))
+    root.bind_all("<Button-5>", lambda event: roll(event, 3))
+
+
+class ScrollFrame(tk.Frame):
+    """A sheet that scrolls vertically without stealing the wheel from other screens."""
+
+    def __init__(self, parent, **kw):
+        super().__init__(parent, **kw)
+        self.canvas = tk.Canvas(self, bg=PAPER, highlightthickness=0)
+        self.inner = tk.Frame(self.canvas, bg=PAPER)
+        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.vsb.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", self._fit)
+        self.canvas.bind("<Configure>", self._fit)
+
+    def _fit(self, _event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.canvas.itemconfig(self._win, width=self.canvas.winfo_width())
+
     """One-time ttk theme setup; call after the root window exists."""
     style = ttk.Style(root)
     try:

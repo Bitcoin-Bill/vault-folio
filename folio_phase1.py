@@ -306,17 +306,17 @@ class _Interview:
     def show(self):
         self.app.clear()
         self.app.header("SETUP INTERVIEW · NO SEEDS OR KEYS", ok=True)
-        self.frame = self.tk.Frame(self.app, bg="#fafaf8")
+        self.frame = ui.ScrollFrame(self.app)
         self.frame.pack(fill="both", expand=True)
         self.render()
 
     def render(self):
-        for child in self.frame.winfo_children():
+        for child in self.frame.inner.winfo_children():
             child.destroy()
         questions = interview_questions(self.state)
         self.index = min(self.index, max(0, len(questions) - 1))
         key, title, help_text, kind, options = questions[self.index]
-        pad = self.tk.Frame(self.frame, bg="#fafaf8")
+        pad = self.tk.Frame(self.frame.inner, bg=ui.PAPER)
         pad.pack(fill="both", expand=True, padx=70, pady=36)
         self.tk.Label(pad, text=f"QUESTION {self.index + 1} OF {len(questions)}",
                       font=("Courier", 9), bg="#fafaf8", fg="#6b6b6b").pack(anchor="w")

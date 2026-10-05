@@ -912,42 +912,8 @@ F_MONO = ("Courier", 10)
 F_MONO_B = ("Courier", 10, "bold")
 
 
-class ScrollFrame(tk.Frame):
-    def __init__(self, parent, **kw):
-        super().__init__(parent, **kw)
-        self.canvas = tk.Canvas(self, bg=PAPER, highlightthickness=0)
-        self.inner = tk.Frame(self.canvas, bg=PAPER)
-        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.vsb.set)
-        self.vsb.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfig(self._win, width=e.width))
-        self.canvas.bind_all("<MouseWheel>", self._wheel)          # Windows / macOS
-        self.canvas.bind_all("<Button-4>", lambda e: self._wheel_linux(-3))   # Linux
-        self.canvas.bind_all("<Button-5>", lambda e: self._wheel_linux(3))    # Linux
-        self.bind("<Destroy>", self._unbind_wheel)
-
-    def _wheel(self, e):
-        try:
-            self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-        except tk.TclError:
-            pass
-
-    def _wheel_linux(self, direction):
-        try:
-            self.canvas.yview_scroll(direction, "units")
-        except tk.TclError:
-            pass  # canvas already gone; a newer ScrollFrame owns the bindings
-
-    def _unbind_wheel(self, event):
-        if event.widget is self:
-            for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-                try:
-                    self.canvas.unbind_all(sequence)
-                except tk.TclError:
-                    pass
+class ScrollFrame(ui.ScrollFrame):
+    """Kept for existing screens. Wheel routing lives in folio_ui."""
 
 
 def folio_label(parent, text):
@@ -966,6 +932,7 @@ class App(tk.Tk):
         except tk.TclError:
             pass
         ui.init_style(self)
+        ui.install_scrolling(self)
         self.plan = blank_plan()
         self.active_plan = None
         self.dirty = False
