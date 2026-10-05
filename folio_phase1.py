@@ -6,6 +6,7 @@ place to add or change answers afterward.
 import copy
 import re
 from datetime import date
+import folio_ui as ui
 
 
 def new_state():
@@ -306,46 +307,69 @@ class _Interview:
     def show(self):
         self.app.clear()
         self.app.header("SETUP INTERVIEW · NO SEEDS OR KEYS", ok=True)
-        self.frame = self.tk.Frame(self.app, bg="#fafaf8")
+        self.frame = ui.ScrollFrame(self.app)
         self.frame.pack(fill="both", expand=True)
         self.render()
 
     def render(self):
-        for child in self.frame.winfo_children():
+        for child in self.frame.inner.winfo_children():
             child.destroy()
+        self.frame.scroll_to_top()
         questions = interview_questions(self.state)
         self.index = min(self.index, max(0, len(questions) - 1))
         key, title, help_text, kind, options = questions[self.index]
-        pad = self.tk.Frame(self.frame, bg="#fafaf8")
+        pad = self.tk.Frame(self.frame.inner, bg=ui.PAPER)
         pad.pack(fill="both", expand=True, padx=70, pady=36)
         self.tk.Label(pad, text=f"QUESTION {self.index + 1} OF {len(questions)}",
-                      font=("Courier", 9), bg="#fafaf8", fg="#6b6b6b").pack(anchor="w")
-        self.tk.Label(pad, text=title, font=("Georgia", 26), bg="#fafaf8", fg="#0a0a0a",
+                      font=ui.F("Courier", 9), bg=ui.PAPER, fg=ui.HINT).pack(anchor="w")
+        self.tk.Label(pad, text=title, font=ui.F("Georgia", 26), bg=ui.PAPER, fg=ui.INK,
                       wraplength=860, justify="left").pack(anchor="w", pady=(8, 8))
-        help_row = self.tk.Frame(pad, bg="#fafaf8")
+        help_row = self.tk.Frame(pad, bg=ui.PAPER)
         help_row.pack(anchor="w", fill="x", pady=(0, 16))
-        self.tk.Label(help_row, text=help_text, font=("Helvetica", 14), bg="#fafaf8", fg="#2e2e2e",
+        self.tk.Label(help_row, text=help_text, font=ui.F("Helvetica", 14), bg=ui.PAPER, fg=ui.BODY_TEXT,
                       wraplength=760, justify="left").pack(side="left")
-        self.tk.Button(help_row, text="?", font=("Helvetica", 14, "bold"), width=2,
+        self.tk.Button(help_row, text="?", font=ui.F("Helvetica", 14, "bold"), width=2,
+                       bg=ui.PAPER2, fg=ui.INK,
                        command=lambda text=help_text, title=title: self.messagebox.showinfo(title, text)).pack(side="left", padx=(12, 0))
         self.value.set(self.restore_value if self.restore_value is not None else "")
         self.restore_value = None
         if kind == "choice":
+            choice_buttons = []
+
+            def select_choice(chosen):
+                self.value.set(chosen)
+                for button, value in choice_buttons:
+                    selected = value == chosen
+                    button.configure(
+                        bg=(ui.PAPER2 if selected else ui.PAPER),
+                        relief=("solid" if selected else "flat"),
+                        highlightthickness=(2 if selected else 1),
+                        highlightbackground=(ui.OK if selected else ui.LINE),
+                    )
+
             for value, label in options:
-                self.tk.Radiobutton(pad, text=label, value=value, variable=self.value,
-                                    font=("Helvetica", 12), bg="#fafaf8", anchor="w").pack(anchor="w", pady=3)
+                button = self.tk.Button(
+                    pad, text=label, font=ui.F("Helvetica", 14), anchor="w", fg=ui.INK,
+                    padx=14, pady=10, relief="flat", bg=ui.PAPER,
+                    activebackground=ui.PAPER2, highlightthickness=1,
+                    highlightbackground=ui.LINE,
+                    command=lambda chosen=value: select_choice(chosen),
+                )
+                button.pack(fill="x", pady=4)
+                choice_buttons.append((button, value))
+            select_choice(self.value.get())
         else:
-            entry = self.tk.Entry(pad, textvariable=self.value, font=("Helvetica", 13), width=52)
+            entry = self.tk.Entry(pad, textvariable=self.value, font=ui.F("Helvetica", 13), width=52)
             entry.pack(anchor="w", ipady=6)
             entry.focus_set()
             if kind == "number":
-                self.tk.Button(pad, text="I'M NOT SURE", command=lambda: self.answer("unsure")).pack(anchor="w", pady=(8, 0))
-        row = self.tk.Frame(pad, bg="#fafaf8")
+                self.tk.Button(pad, text="I'M NOT SURE", bg=ui.PAPER2, fg=ui.INK, command=lambda: self.answer("unsure")).pack(anchor="w", pady=(8, 0))
+        row = self.tk.Frame(pad, bg=ui.PAPER)
         row.pack(anchor="w", pady=(22, 0))
-        self.tk.Button(row, text="BACK", command=self.back).pack(side="left", padx=(0, 8))
-        self.tk.Button(row, text="NEXT", command=self.next).pack(side="left")
+        self.tk.Button(row, text="BACK", bg=ui.PAPER2, fg=ui.INK, command=self.back).pack(side="left", padx=(0, 8))
+        self.tk.Button(row, text="NEXT", bg=ui.INK, fg=ui.PAPER, command=self.next).pack(side="left")
         self.tk.Label(pad, text="This interview fills the plan. You can edit every sheet afterward. It never asks for a seed or a key.",
-                      font=("Courier", 8), bg="#fafaf8", fg="#6b6b6b", wraplength=720, justify="left").pack(anchor="w", pady=(24, 0))
+                      font=ui.F("Courier", 8), bg=ui.PAPER, fg=ui.HINT, wraplength=720, justify="left").pack(anchor="w", pady=(24, 0))
 
     def answer(self, value):
         self.value.set(value)
@@ -388,16 +412,16 @@ class _Interview:
     def finish(self):
         plan = build_plan(self.state)
         self.app.clear()
-        pad = self.tk.Frame(self.app, bg="#fafaf8")
+        pad = self.tk.Frame(self.app, bg=ui.PAPER)
         pad.pack(fill="both", expand=True, padx=70, pady=36)
-        self.tk.Label(pad, text="HERE IS WHAT YOU SAID", font=("Courier", 9), bg="#fafaf8", fg="#6b6b6b").pack(anchor="w")
+        self.tk.Label(pad, text="HERE IS WHAT YOU SAID", font=ui.F("Courier", 9), bg=ui.PAPER, fg=ui.HINT).pack(anchor="w")
         self.tk.Label(pad, text=plan["meta"].get("planName") or "Untitled plan",
-                      font=("Georgia", 22), bg="#fafaf8").pack(anchor="w", pady=(6, 12))
+                      font=ui.F("Georgia", 22), bg=ui.PAPER).pack(anchor="w", pady=(6, 12))
         lines = [f"Owner: {plan['meta'].get('owner') or 'Not named'}",
                  f"Wallets: {len(plan['vaults'])}",
                  f"First contact: {plan['people'].get('executor') or 'Not named'}"]
         for vault in plan["vaults"]:
             lines.append(f"{vault.get('name')}: {vault.get('setupType')} — no seed stored")
         for line in lines:
-            self.tk.Label(pad, text=line, font=("Helvetica", 12), bg="#fafaf8", anchor="w").pack(anchor="w", pady=2)
-        self.tk.Button(pad, text="EDIT THE PLAN", command=lambda: self.start_editor(plan)).pack(anchor="w", pady=(18, 0))
+            self.tk.Label(pad, text=line, font=ui.F("Helvetica", 12), bg=ui.PAPER, anchor="w").pack(anchor="w", pady=2)
+        self.tk.Button(pad, text="EDIT THE PLAN", bg=ui.INK, fg=ui.PAPER, command=lambda: self.start_editor(plan)).pack(anchor="w", pady=(18, 0))
