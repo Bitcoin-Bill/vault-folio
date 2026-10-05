@@ -1531,7 +1531,8 @@ def show_heir(app, plan):
         family_map.rowconfigure(0, weight=1)
         family_map.columnconfigure(0, weight=1)
     show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams,
-                     save_plan=lambda current: save_guide_notes(app, current))
+                     save_plan=lambda current: save_guide_notes(app, current),
+                     edit_plan=lambda: start_wizard(app, plan))
 
 
 # --------------------------------------------------------------------------
