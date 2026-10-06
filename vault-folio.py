@@ -1820,8 +1820,35 @@ class Wizard:
 
         if isinstance(widget, tk.Text):
             widget.bind("<Key>", block)
+            widget.bind("<<Cut>>", block)      # Ctrl+X otherwise slips past <Key>
+            widget.bind("<<Clear>>", block)
             widget.bind("<<Paste>>", block)
             widget.bind("<Button-2>", block)  # middle-click paste on X11
+            widget.bind("<Button-1>", warn_once)
+        elif isinstance(widget, ttk.Combobox):
+            # readonly blocks typing but BY DESIGN still allows picking another
+            # dropdown option (mouse or arrow keys) — revert every such change.
+            try:
+                widget.configure(state="readonly")
+            except tk.TclError:
+                pass
+            locked_value = widget.get()
+            combo_pass = {"Tab", "Escape", "Shift_L", "Shift_R", "Control_L",
+                          "Control_R", "Alt_L", "Alt_R"}  # no arrows: they change the value
+
+            def revert(_event=None):
+                if widget.get() != locked_value:
+                    widget.set(locked_value)
+                    warn()
+
+            def block_keys(event=None):
+                if event is not None and ((event.state & 0x4) or event.keysym in combo_pass):
+                    return None  # copy combos and focus movement still work
+                warn()
+                return "break"
+
+            widget.bind("<<ComboboxSelected>>", revert)
+            widget.bind("<Key>", block_keys)
             widget.bind("<Button-1>", warn_once)
         else:
             try:
@@ -1843,6 +1870,7 @@ class Wizard:
     def entry(self, parent, label, path, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
+        self.vars[path] = v  # keep the Tcl variable alive: a locked field attaches no trace, so without this the StringVar is garbage-collected and the entry shows blank
         e = tk.Entry(parent, textvariable=v, font=F_BODY, bg=WHITE, fg=INK, relief="solid", bd=1)
         ui.focusable(e)
         e.pack(fill="x", ipady=3)
@@ -1854,6 +1882,7 @@ class Wizard:
     def combo(self, parent, label, path, options, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
+        self.vars[path] = v  # keep the Tcl variable alive: a locked combobox attaches no binding closure, so without this the StringVar is garbage-collected and the combo shows blank
         cb = ttk.Combobox(parent, textvariable=v, values=options, state="readonly", font=F_BODY)
         cb.pack(fill="x")
         if not self.lock_saved(cb, path):
