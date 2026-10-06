@@ -566,6 +566,12 @@ def build_runbook_text(p):
     a(f"Prepared: {p['meta'].get('created') or '—'}")
     a(f"Jurisdiction: {p['meta'].get('jurisdiction') or 'Not recorded'}")
     a(f"Legal notes: {p['meta'].get('legalNotes') or 'Not recorded'}")
+    if p.get("amendments"):
+        a("")
+        a("NOTES ADDED ON TOP OF THE SAVED GUIDE")
+        a("-" * 72)
+        for i, note in enumerate(p["amendments"], 1):
+            a(f"  {i}. {note}")
     a("")
     a("READ FIRST — THE WARNING THAT MATTERS")
     a("-" * 72)
@@ -889,7 +895,7 @@ def canvas_family_map(cv, plan):
                 if candidate and candidate.casefold() not in {h.casefold() for h in holders}:
                     holders.append(candidate)
             location = str(record.get("location") or "").strip()
-            if location:
+            if location and location.casefold() not in {p.casefold() for p in places}:
                 places.append(location)
         return ("; ".join(holders) or "Not recorded",
                 "; ".join(value for value in places if value) or "Not recorded")
@@ -998,7 +1004,9 @@ def show_tree_detail(title, rows):
         tk.Label(window, text=label, font=themes.F("Courier", 9), fg=HINT, bg=PAPER).pack(anchor="w", padx=18)
         tk.Label(window, text=value, font=themes.F("Helvetica", 13), bg=PAPER, fg=INK, wraplength=420, justify="left").pack(anchor="w", padx=18, pady=(0, 8))
     tk.Label(window, text="This is a location and role note. It is not a seed.", font=themes.F("Courier", 9),
-             fg=FLAG, bg=PAPER).pack(anchor="w", padx=18, pady=(4, 16))
+             fg=FLAG, bg=PAPER).pack(anchor="w", padx=18, pady=(4, 8))
+    ui.btn_primary(window, "CLOSE", window.destroy).pack(anchor="e", padx=18, pady=(0, 16))
+    ui.center_window(window, window.master)
 
 
 def canvas_psbt_flow(cv, medium):
@@ -1086,6 +1094,7 @@ class App(tk.Tk):
         self.guide_path = None    # file the open guide came from
         self.guide_env = None     # original envelope (public parts)
         self.guide_dek = None     # data key from the open; lets notes re-seal losslessly
+        self.saved_snapshot = None  # copy of the plan as last saved; cleared with the session
         self.ubuntu_test = ubuntu_test
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
@@ -1318,6 +1327,8 @@ def home_screen(app):
     app.guide_path = None
     app.guide_env = None
     app.guide_dek = None
+    discard_plan(getattr(app, "saved_snapshot", None))  # CLEAR SESSION means it
+    app.saved_snapshot = None
     app.header()
     frame = ScrollFrame(app)
     frame.pack(fill="both", expand=True)
@@ -1442,23 +1453,6 @@ def open_file_flow(app):
         messagebox.showerror(APP_NAME, "Only encrypted Vault Folio JSON plan files can be opened.")
 
 
-def show_full_journal(app, plan):
-    """Read-only view of the saved guide. It does not open the editor."""
-    window = tk.Toplevel(app)
-    window.title("Full journal — read only")
-    window.configure(bg=PAPER)
-    window.geometry("860x700")
-    tk.Label(window, text="FULL JOURNAL · READ ONLY", font=F_MONO_B, bg=PAPER, fg=FLAG).pack(anchor="w", padx=18, pady=(16, 4))
-    tk.Label(window, text="This is the recorded guide. Nothing here changes the sealed file.",
-             font=F_BODY, bg=PAPER, fg=INK, wraplength=780, justify="left").pack(anchor="w", padx=18)
-    box = ScrollFrame(window)
-    box.pack(fill="both", expand=True, padx=18, pady=12)
-    tk.Label(box.inner, text=build_runbook_text(plan), font=F_BODY, bg=PAPER, fg=INK,
-             justify="left", wraplength=760, anchor="w").pack(anchor="w")
-    tk.Button(window, text="CLOSE JOURNAL", command=window.destroy, font=F_MONO_B,
-              bg=INK, fg=PAPER, relief="flat", padx=12, pady=8).pack(anchor="e", padx=18, pady=(0, 16))
-
-
 def confirm_alter_saved_guide(app, plan):
     """A saved guide is not an open draft. Changing it needs a warning and the passphrase."""
     if not messagebox.askokcancel(
@@ -1476,15 +1470,27 @@ def confirm_alter_saved_guide(app, plan):
         if not pw:
             return
         try:
-            with open(path, "r", encoding="utf-8") as handle:
-                current = json.load(handle)
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    current = json.load(handle)
+            except (OSError, UnicodeError, ValueError) as read_error:
+                messagebox.showerror(
+                    APP_NAME,
+                    "The saved guide file could not be read (" + str(read_error) + "). "
+                    "The guide was not opened for changes.", parent=app)
+                return
             if isinstance(current, dict) and current.get("magic") == HARDWARE_MAGIC:
                 from folio_security import open_package
                 methods = current.get("methods") or []
                 passphrase_indexes = [i for i, item in enumerate(methods)
                                       if (item.get("meta") or {}).get("kind") == "passphrase"]
                 if not passphrase_indexes:
-                    raise ValueError("This guide has no passphrase method.")
+                    messagebox.showerror(
+                        APP_NAME,
+                        "This guide has no passphrase unlock method (for example, it is "
+                        "YubiKey-only). Editing is verified by passphrase, so this guide "
+                        "cannot be opened for changes here.", parent=app)
+                    return
                 last_error = None
                 for index in passphrase_indexes:
                     try:
@@ -1497,7 +1503,7 @@ def confirm_alter_saved_guide(app, plan):
                     raise last_error
             else:
                 decrypt_plan(current, pw)
-        except (OSError, ValueError, TypeError, UnicodeError):
+        except (ValueError, TypeError):
             messagebox.showerror(APP_NAME, "That passphrase does not open this file. The guide was not opened for changes.", parent=app)
             return
         finally:
@@ -1541,6 +1547,9 @@ def save_guide_notes(app, plan):
     except Exception as exc:
         messagebox.showerror(APP_NAME, str(exc), parent=app)
         return
+    if getattr(app, "saved_snapshot", None) is not None:
+        discard_plan(app.saved_snapshot)  # "saved" now means the file with these notes
+        app.saved_snapshot = copy.deepcopy(plan)
     messagebox.showinfo(APP_NAME, "Notes and checklist saved. Every existing unlock method still opens the file.", parent=app)
 
 
@@ -1561,29 +1570,31 @@ def open_choice(app, plan):
         messagebox.showerror(APP_NAME, str(exc))
         return
     app.active_plan = plan
+    plan.pop("savedOriginal", None)  # legacy dead key from an earlier editor build
     if getattr(app, "guide_path", None):
         app.saved_snapshot = copy.deepcopy(plan)
-        plan.setdefault("savedOriginal", copy.deepcopy(plan))
-        plan["savedOriginal"].pop("savedOriginal", None)
-        plan["savedOriginal"].pop("amendments", None)
     dlg = tk.Toplevel(app)
-    dlg.configure(bg=PAPER)
+    dlg.configure(bg=PAPER, highlightthickness=1, highlightbackground=INK)
     dlg.title(APP_NAME)
     dlg.grab_set()
-    tk.Label(dlg, text="Plan opened: " + (plan["meta"].get("planName") or "untitled"),
+    tk.Label(dlg, text="Guide opened: " + (plan["meta"].get("planName") or "untitled"),
              font=F_H2, bg=PAPER, fg=INK).pack(padx=24, pady=(20, 4), anchor="w")
-    tk.Label(dlg, text="Choose how to open this guide. Viewing makes no changes; editing saves a new encrypted copy.", font=F_BODY, bg=PAPER, fg=BODY_TEXT).pack(padx=24, anchor="w")
+    tk.Label(dlg, text="Choose how to open this guide. Viewing makes no changes; editing saves a new encrypted copy.",
+             font=F_BODY, bg=PAPER, fg=BODY_TEXT, wraplength=560, justify="left").pack(padx=24, anchor="w")
     row = tk.Frame(dlg, bg=PAPER)
     row.pack(padx=24, pady=18, anchor="w")
-    tk.Button(row, text="HEIR VIEW", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
+    tk.Button(row, text="HEIR VIEW — READ & FOLLOW", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
               padx=12, pady=8, cursor="hand2",
               command=lambda: (dlg.destroy(), show_heir(app, plan))).pack(side="left", padx=(0, 8))
-    tk.Button(row, text="EDITOR VIEW", font=F_MONO_B, bg=PAPER, fg=FLAG, relief="flat",
+    tk.Button(row, text="EDITOR VIEW — CHANGES", font=F_MONO_B, bg=PAPER, fg=FLAG, relief="flat",
               highlightthickness=1, highlightbackground=FLAG, padx=12, pady=8, cursor="hand2",
               command=lambda: (dlg.destroy(), confirm_alter_saved_guide(app, plan))).pack(side="left")
+    ui.btn_secondary(dlg, "CANCEL — DO NOT OPEN",
+                     lambda: (dlg.destroy(), home_screen(app))).pack(padx=24, pady=(0, 18), anchor="w")
+    ui.center_window(dlg, app)
 
 
-def show_heir(app, plan):
+def show_heir(app, plan, close=None, close_label=None, edit_to_editor=True):
     def draw_diagrams(box, current_plan):
         tk.Label(box, text="ONE-PAGE FAMILY MAP · CLICK SETUP, KEY, OR PERSON CARDS",
                  font=themes.F("Courier", 9), bg=PAPER, fg=HINT).pack(anchor="w", pady=(0, 6))
@@ -1599,9 +1610,10 @@ def show_heir(app, plan):
         xbar.grid(row=1, column=0, sticky="ew")
         family_map.rowconfigure(0, weight=1)
         family_map.columnconfigure(0, weight=1)
-    show_beneficiary(app, plan, lambda: home_screen(app), build_runbook_text, draw_diagrams,
+    show_beneficiary(app, plan, close or (lambda: home_screen(app)), build_runbook_text, draw_diagrams,
                      save_plan=lambda current: save_guide_notes(app, current),
-                     edit_plan=lambda: confirm_alter_saved_guide(app, plan))
+                     edit_plan=(lambda: confirm_alter_saved_guide(app, plan)) if edit_to_editor else None,
+                     close_label=close_label or 'CLOSE GUIDE & CLEAR SESSION')
 
 
 # --------------------------------------------------------------------------
@@ -1653,6 +1665,15 @@ class Wizard:
         self.step = 0
         self.vars = {}
         self.vault_intake = None
+        self._build_chrome()
+
+    def _build_chrome(self):
+        """(Re)build the editor chrome around the current state and render.
+
+        Split from __init__ so returning from the heir preview can restore the
+        exact same wizard — current step, vault interview, pending answers —
+        instead of starting a fresh one."""
+        app = self.app
         app.clear()
         app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
         if getattr(app, "guide_path", None):
@@ -1688,7 +1709,7 @@ class Wizard:
         nav.pack(fill="x")
         self.back_btn = ui.btn_secondary(nav, "← BACK / EXIT", self.back)
         self.back_btn.pack(side="left", padx=8, pady=6)
-        ui.btn_secondary(nav, "HEIR VIEW", lambda: show_heir(self.app, self.plan)).pack(side="left", padx=8, pady=6)
+        ui.btn_secondary(nav, "HEIR VIEW", self.to_heir).pack(side="left", padx=8, pady=6)
         if getattr(self.app, "saved_snapshot", None):
             ui.btn_secondary(nav, "RESET TO SAVED", self.reset_to_saved).pack(side="left", padx=8, pady=6)
         self.pos_lbl = tk.Label(nav, text="", font=themes.F("Courier", 9), bg=PAPER, fg=HINT)
@@ -1738,6 +1759,21 @@ class Wizard:
                 return
             home_screen(self.app)
 
+    def to_heir(self):
+        """Preview the guide as the family will see it, without losing edits."""
+        was_dirty = self.app.dirty
+        if self.vault_intake is not None and getattr(self, "intake_value", None) is not None:
+            # A half-typed interview answer lives only in the widget, which the
+            # heir view is about to destroy. Stash it so the round trip keeps it.
+            self.vault_intake["pending"] = self.intake_value.get()
+
+        def back_to_editor():
+            self._build_chrome()  # same wizard: step, interview and edits intact
+            self.app.dirty = was_dirty
+
+        show_heir(self.app, self.plan, close=back_to_editor,
+                  close_label="← BACK TO EDITOR", edit_to_editor=False)
+
     def reset_to_saved(self):
         snapshot = getattr(self.app, "saved_snapshot", None)
         if not snapshot:
@@ -1760,20 +1796,79 @@ class Wizard:
         return getp(snapshot, path)
 
     def lock_saved(self, widget, path):
+        """Make a saved entry read-only and explain why on interaction.
+
+        Entry/Combobox use state='readonly' (disabled would swallow events,
+        so the explanation could never fire). tk.Text has no readonly state,
+        so edits are blocked at the event level while selection stays live."""
         saved = self.saved_value(path)
         if saved in (None, ""):
             return False
-        try:
-            widget.configure(state="disabled")
-        except tk.TclError:
-            pass
-        def warn(_event=None, saved_value=saved):
+
+        warned = {"clicked": False}
+
+        def warn(_event=None):
             messagebox.showwarning(
                 APP_NAME,
                 "This entry was saved with the guide and is locked.\n\n"
                 "You can add a note below. You cannot replace or delete a saved entry.",
                 parent=self.app)
-        widget.bind("<Button-1>", warn)
+
+        def warn_once(_event=None):
+            if not warned["clicked"]:
+                warned["clicked"] = True
+                warn()
+
+        _NAV_KEYS = {"Left", "Right", "Up", "Down", "Home", "End", "Prior", "Next",
+                     "Tab", "Shift_L", "Shift_R", "Control_L", "Control_R",
+                     "Alt_L", "Alt_R", "Escape"}
+
+        def block(event=None):
+            if event is not None:
+                if (event.state & 0x4) or event.keysym in _NAV_KEYS:
+                    return None  # copy/select combos and navigation still work
+            warn()
+            return "break"
+
+        if isinstance(widget, tk.Text):
+            widget.bind("<Key>", block)
+            widget.bind("<<Cut>>", block)      # Ctrl+X otherwise slips past <Key>
+            widget.bind("<<Clear>>", block)
+            widget.bind("<<Paste>>", block)
+            widget.bind("<Button-2>", block)  # middle-click paste on X11
+            widget.bind("<Button-1>", warn_once)
+        elif isinstance(widget, ttk.Combobox):
+            # readonly blocks typing but BY DESIGN still allows picking another
+            # dropdown option (mouse or arrow keys) — revert every such change.
+            try:
+                widget.configure(state="readonly")
+            except tk.TclError:
+                pass
+            locked_value = widget.get()
+            combo_pass = {"Tab", "Escape", "Shift_L", "Shift_R", "Control_L",
+                          "Control_R", "Alt_L", "Alt_R"}  # no arrows: they change the value
+
+            def revert(_event=None):
+                if widget.get() != locked_value:
+                    widget.set(locked_value)
+                    warn()
+
+            def block_keys(event=None):
+                if event is not None and ((event.state & 0x4) or event.keysym in combo_pass):
+                    return None  # copy combos and focus movement still work
+                warn()
+                return "break"
+
+            widget.bind("<<ComboboxSelected>>", revert)
+            widget.bind("<Key>", block_keys)
+            widget.bind("<Button-1>", warn_once)
+        else:
+            try:
+                widget.configure(state="readonly")
+            except tk.TclError:
+                pass
+            widget.bind("<Button-1>", warn_once)
+            widget.bind("<Key>", warn)
         return True
 
     # ---- form helpers -----------------------------------------------------
@@ -1787,6 +1882,7 @@ class Wizard:
     def entry(self, parent, label, path, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
+        self.vars[path] = v  # keep the Tcl variable alive: a locked field attaches no trace, so without this the StringVar is garbage-collected and the entry shows blank
         e = tk.Entry(parent, textvariable=v, font=F_BODY, bg=WHITE, fg=INK, relief="solid", bd=1)
         ui.focusable(e)
         e.pack(fill="x", ipady=3)
@@ -1798,6 +1894,7 @@ class Wizard:
     def combo(self, parent, label, path, options, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
+        self.vars[path] = v  # keep the Tcl variable alive: a locked combobox attaches no binding closure, so without this the StringVar is garbage-collected and the combo shows blank
         cb = ttk.Combobox(parent, textvariable=v, values=options, state="readonly", font=F_BODY)
         cb.pack(fill="x")
         if not self.lock_saved(cb, path):
@@ -1927,12 +2024,13 @@ class Wizard:
     def page_identity(self):
         pad = self.page("Plan & owner", STEP_INTROS["identity"])
         self.entry(pad, "Plan name", "meta.planName", "Something your executor would recognize.")
-        self.entry(pad, "Owner", "meta.owner")
-        self.entry(pad, "Date prepared", "meta.created")
+        self.entry(pad, "Owner", "meta.owner", "Whose plan this is — the name the family knows you by.")
+        self.entry(pad, "Date prepared", "meta.created", "YYYY-MM-DD. Refresh it whenever you make real changes.")
         self.entry(pad, "Jurisdiction / legal context", "meta.jurisdiction",
                    "Country/state, and whether a will or trust references this plan. The will should point to "
                    "this file — it should never contain seeds or hiding places.")
-        self.text(pad, "Legal notes (optional)", "meta.legalNotes")
+        self.text(pad, "Legal notes (optional)", "meta.legalNotes",
+                  "Anything a lawyer wrote that affects this plan. Context, not secrets.")
 
     # ---- folio 02 ---------------------------------------------------------
     def page_people(self):
@@ -2176,7 +2274,9 @@ class Wizard:
                  wraplength=640).pack(anchor="w", padx=20, pady=(2, 8))
         tk.Label(card, text=help_text, font=F_BODY, bg=WHITE, fg=BODY_TEXT, anchor="w", justify="left",
                  wraplength=640).pack(anchor="w", padx=20, pady=(0, 18))
-        self.intake_value = tk.StringVar(value=str(self.vault_intake["answers"].get(key, "")))
+        pending = self.vault_intake.get("pending")  # half-typed answer kept across an heir-view round trip
+        self.intake_value = tk.StringVar(value=str(pending if pending is not None
+                                                   else self.vault_intake["answers"].get(key, "")))
         if kind == "choice":
             for value, label in options:
                 tk.Radiobutton(card, text=label, value=value, variable=self.intake_value,
@@ -2233,6 +2333,7 @@ class Wizard:
         answers = self.vault_intake["answers"]
         old_value = answers.get(key)
         answers[key] = answer
+        self.vault_intake.pop("pending", None)  # committed now; no longer pending
         vault = self.vault_intake["vault"]
         resolved = answers.get("structure_detail") if answers.get("structure") == "unsure" else answers.get("structure")
         if key == "structure" and old_value != answer:
@@ -2479,7 +2580,9 @@ class Wizard:
                    ["Yes — small amount, full cycle, verified", "Yes — but not since last software upgrade",
                     "Not yet (plan incomplete until done)"],
                    "A test spend is part of the setup, not a demonstration.")
-        self.text(pad, "Signing procedure notes", "signing.coordinatorNotes")
+        self.text(pad, "Signing procedure notes", "signing.coordinatorNotes",
+                  "The exact, tested steps for building and signing a spend, in your own words — "
+                  "as you would tell a careful friend. No seeds or keys.")
 
     # ---- folio 05 ---------------------------------------------------------
     def page_backups(self):
@@ -2505,7 +2608,8 @@ class Wizard:
                    ["Yes — recorded with the descriptor copies", "Not yet"],
                    "They let a recovery be verified before any real spend.")
         self.entry(pad, "Software + versions that successfully signed a test transaction",
-                   "backups.testedSoftware")
+                   "backups.testedSoftware",
+                   "e.g. 'Sparrow 1.9.3 + Coldcard Mk4 — signed a full test in March 2026.'")
 
     def draw_dlocs(self):
         for w in self.dloc_box.winfo_children():
@@ -2537,7 +2641,8 @@ class Wizard:
     # ---- folio 06 ---------------------------------------------------------
     def page_inheritance(self):
         pad = self.page("Inheritance mechanism", STEP_INTROS["inheritance"])
-        self.combo(pad, "Primary inheritance mechanism", "inheritance.mechanism", MECHANISMS)
+        self.combo(pad, "Primary inheritance mechanism", "inheritance.mechanism", MECHANISMS,
+                   "How the family actually gains the ability to recover: people, documents, timers. Pick the closest.")
         self.text(pad, "Release conditions — when and how heirs gain access", "inheritance.releaseConditions",
                   "e.g. Trustee releases sealed key B on presentation of death certificate; timelocked path "
                   "opens after 18 months of inactivity on the family vault…")
@@ -2546,7 +2651,8 @@ class Wizard:
                    "out than one missed year.")
         self.entry(pad, "Legal documents referencing this plan", "inheritance.legalDocs",
                    "The will names that instructions exist and who holds them — never the seeds.")
-        self.entry(pad, "Where the sealed instruction letter lives", "inheritance.letterLocation")
+        self.entry(pad, "Where the sealed instruction letter lives", "inheritance.letterLocation",
+                   "e.g. 'with the will at Harbor & Finch' or 'desk drawer, red envelope'.")
         self.text(pad, "Canary / liveness signal (optional)", "inheritance.canary",
                   "e.g. one small watched UTXO on the family descriptor; if it moves, someone is spending that "
                   "policy. An alarm, not a dead-man switch.")
@@ -2555,12 +2661,14 @@ class Wizard:
     def page_rehearsal(self):
         pad = self.page("Has it actually been tested?", STEP_INTROS["rehearsal"])
         self.combo(pad, "Restore drill: one key restored from its physical backup onto a blank signer?",
-                   "rehearsal.restoreDrill", YESNO3)
+                   "rehearsal.restoreDrill", YESNO3,
+                   "An untested backup is a story, not a backup. One key, onto a blank device, all the way to a verified wallet.")
         self.combo(pad, "Family walkthrough: has the spouse/heir opened these instructions and found the "
                         "descriptor without your help?", "rehearsal.familyWalkthrough",
                    ["Yes — they found everything unaided", "They know the plan exists", "Not yet"])
-        self.entry(pad, "Date of last full test spend", "rehearsal.testSpendDate")
-        self.text(pad, "Rehearsal notes / what went wrong and was fixed", "rehearsal.notes")
+        self.entry(pad, "Date of last full test spend", "rehearsal.testSpendDate", "YYYY-MM-DD is enough.")
+        self.text(pad, "Rehearsal notes / what went wrong and was fixed", "rehearsal.notes",
+                  "What broke during rehearsal and what you changed. Future-you will thank present-you.")
 
     # ---- folio 08: review -------------------------------------------------
     def page_review(self):
@@ -2593,7 +2701,9 @@ class Wizard:
             body = f["detail"] + (("\n→ " + f["fix"]) if f["fix"] else "")
             tk.Label(inner, text=body, font=themes.F("Helvetica", 9), bg=WHITE, fg=BODY_TEXT, anchor="w",
                      wraplength=600, justify="left").pack(anchor="w", padx=12, pady=(2, 10))
-        self.text(pad, "Owner notes (encrypted with the plan)", "ownerNotes")
+        self.text(pad, "Owner notes (encrypted with the plan)", "ownerNotes",
+                  "Anything the family should hear in your voice. The file is encrypted, but it will be opened — "
+                  "still no seeds, keys, or passphrases.")
 
     # ---- folio 09: export -------------------------------------------------
     def page_export(self):
@@ -2642,7 +2752,8 @@ class Wizard:
 
 
 def start_wizard(app, plan):
-    Wizard(app, plan)
+    app.wizard = Wizard(app, plan)
+    return app.wizard
 
 
 def save_synthetic_test_flow(app, plan):

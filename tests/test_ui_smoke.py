@@ -117,6 +117,191 @@ class ScreenConstructionTests(unittest.TestCase):
         self.vf.show_tree_detail("Key 1", [("Holder", "Ada"), ("Location", "home safe")])
         self.app.update_idletasks()
 
+    def test_heir_nav_buttons_are_mapped_and_sized(self):
+        """Regression: the scroll rewrite squeezed the bottom bar to 1px, so
+        PREVIOUS / NEXT / SAVE / CLOSE were all unreachable in the heir view."""
+        import tkinter as tk
+        self.vf.show_heir(self.app, self.plan())
+        self.app.update_idletasks()
+        self.app.update()
+        found = {}
+
+        def walk(widget):
+            if isinstance(widget, tk.Button):
+                found[str(widget.cget("text"))] = widget
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        for label in ("← PREVIOUS", "NEXT STEP →", "SAVE NOTES INTO ENCRYPTED FILE",
+                      "EDITOR VIEW", "CLOSE GUIDE & CLEAR SESSION"):
+            self.assertIn(label, found, f"{label} missing")
+            button = found[label]
+            self.assertTrue(button.winfo_ismapped(), f"{label} not mapped")
+            self.assertGreater(button.winfo_height(), 20, f"{label} squeezed")
+
+    def test_saved_snapshot_cleared_with_session(self):
+        """Regression: CLOSE GUIDE & CLEAR SESSION left a full plaintext copy
+        of the guide in RAM and offered RESET TO SAVED on the next new plan."""
+        plan = self.plan()
+        self.app.saved_snapshot = {"meta": dict(plan["meta"]), "people": dict(plan["people"])}
+        self.vf.home_screen(self.app)
+        self.app.update_idletasks()
+        self.assertIsNone(self.app.saved_snapshot)
+
+    def test_wizard_heir_toggle_round_trips_without_losing_edits(self):
+        """Regression: HEIR VIEW from the editor was a one-way door whose close
+        discarded unsaved work without a prompt."""
+        import tkinter as tk
+        plan = self.plan()
+        wizard = self.vf.start_wizard(self.app, plan)
+        self.app.dirty = True
+        plan["meta"]["planName"] = "Edited in the wizard"
+        wizard.to_heir()
+        self.app.update_idletasks()
+        buttons = {}
+
+        def walk(widget):
+            if isinstance(widget, tk.Button):
+                buttons[str(widget.cget("text"))] = widget
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        self.assertIn("← BACK TO EDITOR", buttons)
+        buttons["← BACK TO EDITOR"].invoke()
+        self.app.update_idletasks()
+        self.assertEqual(plan["meta"]["planName"], "Edited in the wizard")
+        self.assertTrue(self.app.dirty)
+        self.assertIs(self.app.active_plan, plan)
+
+    def test_mid_interview_heir_round_trip_preserves_pending_answer(self):
+        """Regression: HEIR VIEW mid-wallet-interview used to construct a fresh
+        Wizard on return, resetting the step and losing a half-typed answer."""
+        import tkinter as tk
+        plan = self.plan()
+        wizard = self.vf.start_wizard(self.app, plan)
+        vaults_step = next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "vaults")
+        wizard.goto(vaults_step)
+        wizard.begin_vault_intake()
+        self.app.update_idletasks()
+        wizard.intake_value.set("multi")  # chosen but NOT committed (NEXT never pressed)
+        wizard.to_heir()
+        self.app.update_idletasks()
+        buttons = {}
+
+        def walk(widget):
+            if isinstance(widget, tk.Button):
+                buttons[str(widget.cget("text"))] = widget
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        buttons["← BACK TO EDITOR"].invoke()
+        self.app.update_idletasks()
+        self.assertIs(self.app.wizard, wizard)                # same wizard, not a fresh one
+        self.assertEqual(wizard.step, vaults_step)            # still on the vaults step
+        self.assertIsNotNone(wizard.vault_intake)             # interview still active
+        self.assertEqual(wizard.intake_value.get(), "multi")  # pending answer restored
+        self.assertEqual(wizard.vault_intake["answers"], {})  # but never auto-committed
+
+    def test_locked_text_refuses_cut_shortcut(self):
+        """Regression: Ctrl+X slipped past the <Key> block via the <<Cut>>
+        virtual event, so a 'locked' saved entry could be cut on screen."""
+        import copy
+        import tkinter as tk
+        orig_warn = self.vf.messagebox.showwarning
+        self.vf.messagebox.showwarning = lambda *a, **k: None  # keep the test modal-free
+        self.addCleanup(setattr, self.vf.messagebox, "showwarning", orig_warn)
+        plan = self.plan()
+        plan["meta"]["legalNotes"] = "SAVED LEGAL NOTE — must not change"
+        self.app.saved_snapshot = copy.deepcopy(plan)
+        wizard = self.vf.start_wizard(self.app, plan)
+        wizard.goto(next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "identity"))
+        self.app.update_idletasks()
+        texts = []
+
+        def walk(widget):
+            if isinstance(widget, tk.Text):
+                texts.append(widget)
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        target = next(t for t in texts if "SAVED LEGAL NOTE" in t.get("1.0", "end"))
+        target.tag_add("sel", "1.0", "end")
+        target.event_generate("<<Cut>>")
+        self.app.update_idletasks()
+        self.assertIn("SAVED LEGAL NOTE — must not change", target.get("1.0", "end"))
+        self.assertEqual(plan["meta"]["legalNotes"], "SAVED LEGAL NOTE — must not change")
+
+    def test_locked_combobox_reverts_dropdown_changes(self):
+        """Regression: a readonly ttk.Combobox still allows choosing another
+        option (mouse or arrows); the locked value must be re-asserted."""
+        import copy
+        from tkinter import ttk
+        orig_warn = self.vf.messagebox.showwarning
+        self.vf.messagebox.showwarning = lambda *a, **k: None  # keep the test modal-free
+        self.addCleanup(setattr, self.vf.messagebox, "showwarning", orig_warn)
+        plan = self.plan()
+        plan["rehearsal"]["familyWalkthrough"] = "Not yet"
+        self.app.saved_snapshot = copy.deepcopy(plan)
+        wizard = self.vf.start_wizard(self.app, plan)
+        wizard.goto(next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "rehearsal"))
+        self.app.update_idletasks()
+        combos = []
+
+        def walk(widget):
+            if isinstance(widget, ttk.Combobox):
+                combos.append(widget)
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        target = next(c for c in combos if c.get() == "Not yet")
+        target.set("Yes — they found everything unaided")
+        target.event_generate("<<ComboboxSelected>>")
+        self.app.update_idletasks()
+        self.assertEqual(target.get(), "Not yet")
+        self.assertEqual(plan["rehearsal"]["familyWalkthrough"], "Not yet")
+
+    def test_family_map_dedups_places(self):
+        """Regression: 'Place: Home safe; Home safe' when a key location and a
+        backup record name the same spot."""
+        import tkinter as tk
+        plan = self.plan()
+        plan["backupRecords"] = [{"label": "Main vault / Coldcard A",
+                                  "custodian": "Ada", "location": "home safe"}]
+        cv = tk.Canvas(self.app)
+        self.vf.canvas_family_map(cv, plan)
+        self.app.update_idletasks()
+        texts = [cv.itemcget(i, "text") for i in cv.find_all() if cv.type(i) == "text"]
+        joined = "\n".join(texts)
+        self.assertNotIn("home safe; home safe", joined.casefold())
+        cv.destroy()
+
+    def test_open_choice_strips_savedoriginal_and_sets_snapshot(self):
+        """Regression: legacy savedOriginal keys must not be carried into new
+        saves; the snapshot lives on the app, not inside the plan."""
+        import tkinter as tk
+        from folio_synthetic import TEST_MARKER
+        plan = self.plan()
+        plan["meta"][TEST_MARKER] = True
+        plan["savedOriginal"] = {"meta": {"planName": "stale duplicate"}}
+        self.app.guide_path = "/tmp/fake-guide.csp.json"
+        try:
+            self.vf.open_choice(self.app, plan)
+            self.app.update_idletasks()
+            self.assertNotIn("savedOriginal", self.app.active_plan)
+            self.assertIsNotNone(self.app.saved_snapshot)
+        finally:
+            for widget in self.app.winfo_children():
+                if isinstance(widget, tk.Toplevel):
+                    widget.destroy()
+            self.app.guide_path = None
+            self.app.saved_snapshot = None
+            self.vf.home_screen(self.app)
+
     def test_diagram_cards_contain_their_text_at_2x(self):
         """Regression: fixed card heights and the canvas width= phantom-space
         quirk spilled wrapped text out of its card at other interface scales."""

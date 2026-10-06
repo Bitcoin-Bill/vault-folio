@@ -298,15 +298,24 @@ def open_settings(app):
         for role in ("paper", "card", "ink", "flag", "ok"):
             tk.Frame(swatches, bg=theme["colors"][role], width=16, height=16,
                      highlightthickness=1, highlightbackground=theme["colors"]["line"]).pack(side="left", padx=1)
-    tk.Label(pad, text="INTERFACE SCALE", font=ui.F_MONO_B,
+    tk.Label(pad, text="TEXT SIZE (INTERFACE SCALE)", font=ui.F_MONO_B,
              bg=ui.PAPER, fg=ui.INK).pack(anchor="w", pady=(18, 2))
-    scale = tk.Scale(pad, from_=1.0, to=2.4, resolution=0.1, orient="horizontal",
+    tk.Label(pad, text="Makes every word in the app larger or smaller. 1.0 is the designed size; "
+             "2.4 is the largest. Applies for this session only.",
+             font=ui.F_SMALL, bg=ui.PAPER, fg=ui.BODY_TEXT, wraplength=500,
+             justify="left").pack(anchor="w", pady=(0, 6))
+    scale_row = tk.Frame(pad, bg=ui.PAPER)
+    scale_row.pack(anchor="w")
+    tk.Label(scale_row, text="1.0", font=ui.F_SMALL, bg=ui.PAPER, fg=ui.HINT).pack(side="left")
+    scale = tk.Scale(scale_row, from_=1.0, to=2.4, resolution=0.1, orient="horizontal",
                      bg=ui.PAPER, fg=ui.INK, troughcolor=ui.PAPER2,
-                     highlightthickness=0, length=300,
+                     highlightthickness=0, length=300, showvalue=True,
                      command=lambda value: set_scaling(app, value))
     scale.set(get_scaling(app))
-    scale.pack(anchor="w")
+    scale.pack(side="left", padx=6)
+    tk.Label(scale_row, text="2.4", font=ui.F_SMALL, bg=ui.PAPER, fg=ui.HINT).pack(side="left")
     ttk.Button(pad, text="Close", command=dialog.destroy).pack(anchor="e", pady=(14, 0))
+    ui.center_window(dialog, app)
     return dialog
 
 

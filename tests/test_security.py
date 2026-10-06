@@ -202,5 +202,16 @@ class DocumentTests(unittest.TestCase):
                 prepare_plan(document, folio.blank_plan())
 
 
+    def test_amendments_render_in_the_runbook(self):
+        """Regression: notes added on top of a saved guide were sealed into the
+        file but never displayed anywhere."""
+        plan = prepare_plan({'meta': {'planName': 'P'},
+                             'amendments': ['Bank moved the box to branch 9.']},
+                            folio.blank_plan())
+        runbook = folio.build_runbook_text(plan)
+        self.assertIn('NOTES ADDED ON TOP OF THE SAVED GUIDE', runbook)
+        self.assertIn('Bank moved the box to branch 9.', runbook)
+
+
 if __name__ == '__main__':
     unittest.main()
