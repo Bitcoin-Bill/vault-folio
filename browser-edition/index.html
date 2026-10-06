@@ -886,6 +886,12 @@ function buildRunbook(p){
 
   if(p.meta.jurisdiction) frag.append(el('p',{},el('strong',{},'Jurisdiction: '),p.meta.jurisdiction));
   if(p.meta.legalNotes) frag.append(el('p',{},el('strong',{},'Legal notes: '),p.meta.legalNotes));
+  if(Array.isArray(p.amendments)&&p.amendments.length){
+    const box=el('div',{class:'note'});
+    box.append(el('strong',{},'Notes added on top of the saved guide'));
+    p.amendments.forEach((note,i)=>box.append(el('p',{},`${i+1}. ${note}`)));
+    frag.append(box);
+  }
   frag.append(el('h3',{},'1 · Who to contact'));
   const kv=el('div',{class:'kv'});
   const kvr=(k,v)=>{if(v)kv.append(el('div',{},k),el('div',{},v));};
