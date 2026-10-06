@@ -158,6 +158,19 @@ def badge(parent, text, color, bg=WHITE):
     return tk.Label(parent, text=text.upper(), font=F_BADGE, fg=color, bg=bg, anchor="w")
 
 
+def center_window(window, parent, width=None, height=None):
+    """Center a Toplevel over its parent once it has sized itself."""
+    window.update_idletasks()
+    w = width or window.winfo_reqwidth()
+    h = height or window.winfo_reqheight()
+    pw = parent.winfo_width() or window.winfo_screenwidth()
+    ph = parent.winfo_height() or window.winfo_screenheight()
+    x = parent.winfo_rootx() + max(0, (pw - w) // 2)
+    y = parent.winfo_rooty() + max(0, (ph - h) // 3)
+    window.geometry(f"{w}x{h}+{x}+{y}")
+    return window
+
+
 def hint_label(parent, text, bg=PAPER, wrap=620):
     return tk.Label(parent, text=text, font=F_SMALL, fg=HINT, bg=bg, anchor="w",
                     justify="left", wraplength=wrap)
