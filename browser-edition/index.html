@@ -205,6 +205,11 @@ footer{border-top:1px solid var(--line);padding:26px 28px;max-width:880px;margin
 .hidden{display:none!important}
 
 /* ---------- air-gap gate ---------- */
+#testBanner{
+  position:sticky;top:0;z-index:950;background:#9f1239;color:#fff;
+  font:700 13px/1.4 ui-monospace,monospace;letter-spacing:.05em;
+  padding:8px 14px;text-align:center;
+}
 #gate{
   position:fixed;inset:0;background:var(--ink);color:var(--paper);z-index:900;
   display:flex;align-items:center;justify-content:center;padding:28px;
@@ -324,6 +329,10 @@ function markDirty(){ S.dirty=true; }
 
 /* ---------------- network honesty ---------------- */
 function updateNet(){
+  if(typeof TEST_MODE!=='undefined' && TEST_MODE){
+    document.getElementById('netLabel').textContent='TEST BUILD · synthetic data only';
+    return;
+  }
   const off = !navigator.onLine;
   document.getElementById('netLabel').textContent = off ? 'Offline — good' : 'Online — consider disconnecting';
   document.getElementById('netDot').className = 'dot' + (off?'':' warn');
@@ -1146,6 +1155,11 @@ function renderWizard(){
    user attestation before opening the offline fallback viewer.
    ===================================================================== */
 const GATE = { passed:false, probing:false, btAttested:false };
+/* TEST MODE — flipped to true ONLY in the generated test build
+   (index.test.html, made by make-test-build.sh). Skips the network gate and
+   the mid-session re-lock so the GUI can be exercised on any machine.
+   Every screen carries a synthetic-data banner. Never flip in this file. */
+const TEST_MODE = false;
 function networkPresent(){ return navigator.onLine; }
 async function bluetoothAdapterPresent(){
   try{
@@ -1196,6 +1210,7 @@ function paintGateStatus(list, status){
 }
 
 async function runGate(manual){
+  if(TEST_MODE){ GATE.passed=true; liftGate(); return; }
   if(GATE.probing) return; GATE.probing=true;
   const bt=await bluetoothAdapterPresent();
   renderGate({checking:true, bt});
@@ -1229,12 +1244,14 @@ function liftGate(){
 }
 function updateHdr(ok){
   const d=document.getElementById('netDot'), l=document.getElementById('netLabel');
+  if(TEST_MODE){ d.className='dot warn'; l.textContent='TEST BUILD · synthetic data only'; return; }
   if(ok){ d.className='dot'; l.textContent='Browser offline · isolation unverified'; }
   else { d.className='dot warn'; l.textContent='Network detected · locked'; }
 }
 
 /* mid-session re-lock: network appears → slam the overlay down */
 async function guardLoop(){
+  if(TEST_MODE) return;
   if(!GATE.passed || GATE.probing) return;
   const online=await networkPresent();
   if(online){
@@ -1328,6 +1345,10 @@ function appendRecoveryRecords(host,p){
 }
 
 /* ---------- boot ---------- */
+if(TEST_MODE){
+  const b=el('div',{id:'testBanner'},'TEST BUILD — environment check bypassed · SYNTHETIC DATA ONLY · never enter real plan details');
+  document.body.prepend(b);
+}
 runGate();
 </script>
 </body>
