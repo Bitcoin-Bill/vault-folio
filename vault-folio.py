@@ -1665,6 +1665,15 @@ class Wizard:
         self.step = 0
         self.vars = {}
         self.vault_intake = None
+        self._build_chrome()
+
+    def _build_chrome(self):
+        """(Re)build the editor chrome around the current state and render.
+
+        Split from __init__ so returning from the heir preview can restore the
+        exact same wizard — current step, vault interview, pending answers —
+        instead of starting a fresh one."""
+        app = self.app
         app.clear()
         app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
         if getattr(app, "guide_path", None):
@@ -1752,14 +1761,17 @@ class Wizard:
 
     def to_heir(self):
         """Preview the guide as the family will see it, without losing edits."""
-        plan = self.plan
         was_dirty = self.app.dirty
+        if self.vault_intake is not None and getattr(self, "intake_value", None) is not None:
+            # A half-typed interview answer lives only in the widget, which the
+            # heir view is about to destroy. Stash it so the round trip keeps it.
+            self.vault_intake["pending"] = self.intake_value.get()
 
         def back_to_editor():
-            start_wizard(self.app, plan)
+            self._build_chrome()  # same wizard: step, interview and edits intact
             self.app.dirty = was_dirty
 
-        show_heir(self.app, plan, close=back_to_editor,
+        show_heir(self.app, self.plan, close=back_to_editor,
                   close_label="← BACK TO EDITOR", edit_to_editor=False)
 
     def reset_to_saved(self):
@@ -2262,7 +2274,9 @@ class Wizard:
                  wraplength=640).pack(anchor="w", padx=20, pady=(2, 8))
         tk.Label(card, text=help_text, font=F_BODY, bg=WHITE, fg=BODY_TEXT, anchor="w", justify="left",
                  wraplength=640).pack(anchor="w", padx=20, pady=(0, 18))
-        self.intake_value = tk.StringVar(value=str(self.vault_intake["answers"].get(key, "")))
+        pending = self.vault_intake.get("pending")  # half-typed answer kept across an heir-view round trip
+        self.intake_value = tk.StringVar(value=str(pending if pending is not None
+                                                   else self.vault_intake["answers"].get(key, "")))
         if kind == "choice":
             for value, label in options:
                 tk.Radiobutton(card, text=label, value=value, variable=self.intake_value,
@@ -2319,6 +2333,7 @@ class Wizard:
         answers = self.vault_intake["answers"]
         old_value = answers.get(key)
         answers[key] = answer
+        self.vault_intake.pop("pending", None)  # committed now; no longer pending
         vault = self.vault_intake["vault"]
         resolved = answers.get("structure_detail") if answers.get("structure") == "unsure" else answers.get("structure")
         if key == "structure" and old_value != answer:
