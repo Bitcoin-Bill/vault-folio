@@ -205,6 +205,69 @@ class ScreenConstructionTests(unittest.TestCase):
         self.assertEqual(wizard.intake_value.get(), "multi")  # pending answer restored
         self.assertEqual(wizard.vault_intake["answers"], {})  # but never auto-committed
 
+    def test_pending_interview_answer_survives_back_without_committing(self):
+        wizard = self.vf.start_wizard(self.app, self.plan())
+        wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
+        wizard.begin_vault_intake()
+        wizard.intake_value.set("single")
+        wizard.forward()
+        self.assertEqual(wizard.vault_intake_questions()[1][0], "name")
+        wizard.intake_value.set("Half typed wallet ")
+        wizard.back()
+        self.assertEqual(wizard.intake_value.get(), "single")
+        self.assertNotIn("name", wizard.vault_intake["answers"])
+        wizard.forward()
+        self.assertEqual(wizard.intake_value.get(), "Half typed wallet ")
+        self.assertNotIn("name", wizard.vault_intake["answers"])
+        self.assertEqual(wizard.vault_intake["pending"], {"name": "Half typed wallet "})
+        wizard.forward()
+        self.assertEqual(wizard.vault_intake["answers"]["name"], "Half typed wallet")
+        self.assertNotIn("name", wizard.vault_intake["pending"])
+
+    def test_locked_text_control_whitelist(self):
+        import tkinter as tk
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        wizard = self.vf.start_wizard(self.app, self.plan())
+        target = tk.Text(self.app)
+        target.pack()
+        self.addCleanup(target.destroy)
+        original = "Saved text must stay intact"
+        target.insert("1.0", original)
+        with patch.object(wizard, "saved_value", return_value=original), \
+                patch.object(self.vf.messagebox, "showwarning") as warning:
+            with patch.object(target, "bind", wraps=target.bind) as bindings:
+                self.assertTrue(wizard.lock_saved(target, "meta.legalNotes"))
+            block = next(call.args[1] for call in bindings.call_args_list
+                         if call.args[0] == "<Key>")
+            # Capture the actual callback as well as exercising Tk's real event
+            # dispatch: a virtual Cut/Paste binding alone cannot satisfy this.
+            for key in ("x", "v", "a", "z"):
+                warning.reset_mock()
+                result = block(SimpleNamespace(state=0x4, keysym=key))
+                self.assertEqual(result, "break")
+                warning.assert_called_once()
+            for key in ("c", "C", "Insert", "Left"):
+                warning.reset_mock()
+                result = block(SimpleNamespace(state=0x4, keysym=key))
+                self.assertNotEqual(result, "break")
+                warning.assert_not_called()
+            self.app.update()
+            target.focus_force()
+            self.app.update()
+            target.clipboard_clear()
+            target.clipboard_append("replacement")
+            for event in ("<Control-x>", "<Control-v>"):
+                target.tag_add("sel", "1.0", "end-1c")
+                target.event_generate(event)
+                self.app.update()
+                self.assertEqual(target.get("1.0", "end-1c"), original)
+            warning.reset_mock()
+            target.event_generate("<Control-c>")
+            self.app.update()
+            warning.assert_not_called()
+            self.assertEqual(target.clipboard_get(), original)
+
     def test_locked_text_refuses_cut_shortcut(self):
         """Regression: Ctrl+X slipped past the <Key> block via the <<Cut>>
         virtual event, so a 'locked' saved entry could be cut on screen."""
