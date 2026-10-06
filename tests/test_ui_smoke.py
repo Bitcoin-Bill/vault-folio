@@ -175,6 +175,96 @@ class ScreenConstructionTests(unittest.TestCase):
         self.assertTrue(self.app.dirty)
         self.assertIs(self.app.active_plan, plan)
 
+    def test_mid_interview_heir_round_trip_preserves_pending_answer(self):
+        """Regression: HEIR VIEW mid-wallet-interview used to construct a fresh
+        Wizard on return, resetting the step and losing a half-typed answer."""
+        import tkinter as tk
+        plan = self.plan()
+        wizard = self.vf.start_wizard(self.app, plan)
+        vaults_step = next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "vaults")
+        wizard.goto(vaults_step)
+        wizard.begin_vault_intake()
+        self.app.update_idletasks()
+        wizard.intake_value.set("multi")  # chosen but NOT committed (NEXT never pressed)
+        wizard.to_heir()
+        self.app.update_idletasks()
+        buttons = {}
+
+        def walk(widget):
+            if isinstance(widget, tk.Button):
+                buttons[str(widget.cget("text"))] = widget
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        buttons["← BACK TO EDITOR"].invoke()
+        self.app.update_idletasks()
+        self.assertIs(self.app.wizard, wizard)                # same wizard, not a fresh one
+        self.assertEqual(wizard.step, vaults_step)            # still on the vaults step
+        self.assertIsNotNone(wizard.vault_intake)             # interview still active
+        self.assertEqual(wizard.intake_value.get(), "multi")  # pending answer restored
+        self.assertEqual(wizard.vault_intake["answers"], {})  # but never auto-committed
+
+    def test_locked_text_refuses_cut_shortcut(self):
+        """Regression: Ctrl+X slipped past the <Key> block via the <<Cut>>
+        virtual event, so a 'locked' saved entry could be cut on screen."""
+        import copy
+        import tkinter as tk
+        orig_warn = self.vf.messagebox.showwarning
+        self.vf.messagebox.showwarning = lambda *a, **k: None  # keep the test modal-free
+        self.addCleanup(setattr, self.vf.messagebox, "showwarning", orig_warn)
+        plan = self.plan()
+        plan["meta"]["legalNotes"] = "SAVED LEGAL NOTE — must not change"
+        self.app.saved_snapshot = copy.deepcopy(plan)
+        wizard = self.vf.start_wizard(self.app, plan)
+        wizard.goto(next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "identity"))
+        self.app.update_idletasks()
+        texts = []
+
+        def walk(widget):
+            if isinstance(widget, tk.Text):
+                texts.append(widget)
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        target = next(t for t in texts if "SAVED LEGAL NOTE" in t.get("1.0", "end"))
+        target.tag_add("sel", "1.0", "end")
+        target.event_generate("<<Cut>>")
+        self.app.update_idletasks()
+        self.assertIn("SAVED LEGAL NOTE — must not change", target.get("1.0", "end"))
+        self.assertEqual(plan["meta"]["legalNotes"], "SAVED LEGAL NOTE — must not change")
+
+    def test_locked_combobox_reverts_dropdown_changes(self):
+        """Regression: a readonly ttk.Combobox still allows choosing another
+        option (mouse or arrows); the locked value must be re-asserted."""
+        import copy
+        from tkinter import ttk
+        orig_warn = self.vf.messagebox.showwarning
+        self.vf.messagebox.showwarning = lambda *a, **k: None  # keep the test modal-free
+        self.addCleanup(setattr, self.vf.messagebox, "showwarning", orig_warn)
+        plan = self.plan()
+        plan["rehearsal"]["familyWalkthrough"] = "Not yet"
+        self.app.saved_snapshot = copy.deepcopy(plan)
+        wizard = self.vf.start_wizard(self.app, plan)
+        wizard.goto(next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "rehearsal"))
+        self.app.update_idletasks()
+        combos = []
+
+        def walk(widget):
+            if isinstance(widget, ttk.Combobox):
+                combos.append(widget)
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        target = next(c for c in combos if c.get() == "Not yet")
+        target.set("Yes — they found everything unaided")
+        target.event_generate("<<ComboboxSelected>>")
+        self.app.update_idletasks()
+        self.assertEqual(target.get(), "Not yet")
+        self.assertEqual(plan["rehearsal"]["familyWalkthrough"], "Not yet")
+
     def test_family_map_dedups_places(self):
         """Regression: 'Place: Home safe; Home safe' when a key location and a
         backup record name the same spot."""

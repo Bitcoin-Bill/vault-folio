@@ -1665,6 +1665,15 @@ class Wizard:
         self.step = 0
         self.vars = {}
         self.vault_intake = None
+        self._build_chrome()
+
+    def _build_chrome(self):
+        """(Re)build the editor chrome around the current state and render.
+
+        Split from __init__ so returning from the heir preview can restore the
+        exact same wizard — current step, vault interview, pending answers —
+        instead of starting a fresh one."""
+        app = self.app
         app.clear()
         app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
         if getattr(app, "guide_path", None):
@@ -1752,14 +1761,17 @@ class Wizard:
 
     def to_heir(self):
         """Preview the guide as the family will see it, without losing edits."""
-        plan = self.plan
         was_dirty = self.app.dirty
+        if self.vault_intake is not None and getattr(self, "intake_value", None) is not None:
+            # A half-typed interview answer lives only in the widget, which the
+            # heir view is about to destroy. Stash it so the round trip keeps it.
+            self.vault_intake["pending"] = self.intake_value.get()
 
         def back_to_editor():
-            start_wizard(self.app, plan)
+            self._build_chrome()  # same wizard: step, interview and edits intact
             self.app.dirty = was_dirty
 
-        show_heir(self.app, plan, close=back_to_editor,
+        show_heir(self.app, self.plan, close=back_to_editor,
                   close_label="← BACK TO EDITOR", edit_to_editor=False)
 
     def reset_to_saved(self):
@@ -1820,8 +1832,35 @@ class Wizard:
 
         if isinstance(widget, tk.Text):
             widget.bind("<Key>", block)
+            widget.bind("<<Cut>>", block)      # Ctrl+X otherwise slips past <Key>
+            widget.bind("<<Clear>>", block)
             widget.bind("<<Paste>>", block)
             widget.bind("<Button-2>", block)  # middle-click paste on X11
+            widget.bind("<Button-1>", warn_once)
+        elif isinstance(widget, ttk.Combobox):
+            # readonly blocks typing but BY DESIGN still allows picking another
+            # dropdown option (mouse or arrow keys) — revert every such change.
+            try:
+                widget.configure(state="readonly")
+            except tk.TclError:
+                pass
+            locked_value = widget.get()
+            combo_pass = {"Tab", "Escape", "Shift_L", "Shift_R", "Control_L",
+                          "Control_R", "Alt_L", "Alt_R"}  # no arrows: they change the value
+
+            def revert(_event=None):
+                if widget.get() != locked_value:
+                    widget.set(locked_value)
+                    warn()
+
+            def block_keys(event=None):
+                if event is not None and ((event.state & 0x4) or event.keysym in combo_pass):
+                    return None  # copy combos and focus movement still work
+                warn()
+                return "break"
+
+            widget.bind("<<ComboboxSelected>>", revert)
+            widget.bind("<Key>", block_keys)
             widget.bind("<Button-1>", warn_once)
         else:
             try:
@@ -1843,6 +1882,7 @@ class Wizard:
     def entry(self, parent, label, path, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
+        self.vars[path] = v  # keep the Tcl variable alive: a locked field attaches no trace, so without this the StringVar is garbage-collected and the entry shows blank
         e = tk.Entry(parent, textvariable=v, font=F_BODY, bg=WHITE, fg=INK, relief="solid", bd=1)
         ui.focusable(e)
         e.pack(fill="x", ipady=3)
@@ -1854,6 +1894,7 @@ class Wizard:
     def combo(self, parent, label, path, options, hint=""):
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
+        self.vars[path] = v  # keep the Tcl variable alive: a locked combobox attaches no binding closure, so without this the StringVar is garbage-collected and the combo shows blank
         cb = ttk.Combobox(parent, textvariable=v, values=options, state="readonly", font=F_BODY)
         cb.pack(fill="x")
         if not self.lock_saved(cb, path):
@@ -2233,7 +2274,9 @@ class Wizard:
                  wraplength=640).pack(anchor="w", padx=20, pady=(2, 8))
         tk.Label(card, text=help_text, font=F_BODY, bg=WHITE, fg=BODY_TEXT, anchor="w", justify="left",
                  wraplength=640).pack(anchor="w", padx=20, pady=(0, 18))
-        self.intake_value = tk.StringVar(value=str(self.vault_intake["answers"].get(key, "")))
+        pending = self.vault_intake.get("pending")  # half-typed answer kept across an heir-view round trip
+        self.intake_value = tk.StringVar(value=str(pending if pending is not None
+                                                   else self.vault_intake["answers"].get(key, "")))
         if kind == "choice":
             for value, label in options:
                 tk.Radiobutton(card, text=label, value=value, variable=self.intake_value,
@@ -2290,6 +2333,7 @@ class Wizard:
         answers = self.vault_intake["answers"]
         old_value = answers.get(key)
         answers[key] = answer
+        self.vault_intake.pop("pending", None)  # committed now; no longer pending
         vault = self.vault_intake["vault"]
         resolved = answers.get("structure_detail") if answers.get("structure") == "unsure" else answers.get("structure")
         if key == "structure" and old_value != answer:
