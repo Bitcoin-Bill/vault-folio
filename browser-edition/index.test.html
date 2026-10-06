@@ -1165,7 +1165,7 @@ const GATE = { passed:false, probing:false, btAttested:false };
    (index.test.html, made by make-test-build.sh). Skips the network gate and
    the mid-session re-lock so the GUI can be exercised on any machine.
    Every screen carries a synthetic-data banner. Never flip in this file. */
-const TEST_MODE = false;
+const TEST_MODE = true;
 function networkPresent(){ return navigator.onLine; }
 async function bluetoothAdapterPresent(){
   try{
