@@ -205,6 +205,65 @@ class ScreenConstructionTests(unittest.TestCase):
         self.assertEqual(wizard.intake_value.get(), "multi")  # pending answer restored
         self.assertEqual(wizard.vault_intake["answers"], {})  # but never auto-committed
 
+    def test_pending_answer_survives_back_and_forward(self):
+        """Q2 input survives revisiting Q1, without becoming a committed answer."""
+        wizard = self.vf.start_wizard(self.app, self.plan())
+        wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
+        wizard.begin_vault_intake()
+        wizard.intake_value.set("multi")
+        wizard.advance_vault_intake()
+        self.assertEqual(wizard.vault_intake_questions()[1][0], "name")
+        wizard.intake_value.set("Invented unfinished wallet name")
+        wizard.back()
+        self.assertEqual(wizard.intake_value.get(), "multi")
+        self.assertNotIn("name", wizard.vault_intake["answers"])
+        wizard.forward()
+        self.assertEqual(wizard.vault_intake["index"], 1)
+        self.assertEqual(wizard.intake_value.get(), "Invented unfinished wallet name")
+        self.assertNotIn("name", wizard.vault_intake["answers"])
+        self.assertEqual(wizard.vault_intake["pending"], {"name": "Invented unfinished wallet name"})
+        wizard.advance_vault_intake()
+        self.assertEqual(wizard.vault_intake["answers"]["name"], "Invented unfinished wallet name")
+        self.assertNotIn("name", wizard.vault_intake["pending"])
+
+    def test_locked_text_control_keys_allow_only_copy_and_navigation(self):
+        """Native destructive Control bindings must not reach Tk's class handler."""
+        import tkinter as tk
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        wizard = self.vf.start_wizard(self.app, self.plan())
+        target = tk.Text(self.app)
+        target.pack()
+        target.insert("1.0", "Invented saved instruction")
+        self.addCleanup(target.destroy)
+        with patch.object(wizard, "saved_value", return_value="Invented saved instruction"), \
+                patch.object(target, "bind", wraps=target.bind) as bind, \
+                patch.object(self.vf.messagebox, "showwarning") as warning:
+            wizard.lock_saved(target, "meta.legalNotes")
+            handler = next(call.args[1] for call in bind.call_args_list if call.args[0] == "<Key>")
+            self.app.update()
+            target.focus_force()
+            self.app.update()
+            for key in ("x", "v", "d", "k", "BackSpace", "Delete"):
+                with self.subTest(key=key):
+                    warning.reset_mock()
+                    self.assertEqual(handler(SimpleNamespace(state=4, keysym=key)), "break")
+                    warning.assert_called_once()
+                    target.tag_add("sel", "1.0", "end-1c")
+                    target.event_generate("<KeyPress>", keysym=key, state=4)
+                    self.app.update()
+                    self.assertEqual(target.get("1.0", "end-1c"), "Invented saved instruction")
+            for key in ("c", "C", "Insert", "Left", "Right", "Tab"):
+                with self.subTest(copy_or_navigation=key):
+                    warning.reset_mock()
+                    self.assertIsNone(handler(SimpleNamespace(state=4, keysym=key)))
+                    warning.assert_not_called()
+            warning.reset_mock()
+            target.event_generate("<KeyPress>", keysym="c", state=4)
+            self.app.update()
+            warning.assert_not_called()
+            self.assertEqual(target.get("1.0", "end-1c"), "Invented saved instruction")
+
     def test_locked_text_refuses_cut_shortcut(self):
         """Regression: Ctrl+X slipped past the <Key> block via the <<Cut>>
         virtual event, so a 'locked' saved entry could be cut on screen."""
