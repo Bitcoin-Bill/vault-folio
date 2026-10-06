@@ -835,7 +835,7 @@ function renderExport(host){
     if(pi.value!==pi2.value){prog.className='prog err';prog.textContent='Passphrases do not match.';return;}
     prog.className='prog';bEnc.disabled=true;
     try{
-      const env=await encryptPlan(S.plan,pi.value,m=>prog.textContent=m);
+      const env=await encryptPlan(prepareExportPlan(S.plan,TEST_MODE),pi.value,m=>prog.textContent=m);
       const name=(S.plan.meta.planName||'cold-storage-plan').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
       download(name+'.csp.json',JSON.stringify(env,null,2));
       prog.className='prog okk';prog.textContent='Sealed. Store copies of this file in at least two places; the passphrase travels separately.';
@@ -1041,6 +1041,8 @@ function showDecrypt(env){
     prog.className='prog';
     try{
       const plan=await decryptPlan(env,pi.value,t=>prog.textContent=t);
+      const boundary=checkOpenBoundary(plan,TEST_MODE);
+      if(boundary){ prog.className='prog err'; prog.textContent=boundary; pi.value=''; return; }
       pi.value=''; prog.textContent='';
       showOpenChoice(plan);
     }catch(e){ prog.className='prog err'; prog.textContent=e.message; }
@@ -1166,6 +1168,32 @@ const GATE = { passed:false, probing:false, btAttested:false };
    the mid-session re-lock so the GUI can be exercised on any machine.
    Every screen carries a synthetic-data banner. Never flip in this file. */
 const TEST_MODE = true;
+/* Synthetic-file boundary, mirroring the desktop app: TEST builds open and
+   produce only files whose meta carries this marker; normal builds refuse
+   marked files. The marker travels inside the encrypted payload, so it can
+   only be checked after decryption — but it can never be forged from outside. */
+const TEST_MARKER = 'syntheticTest';
+function isSyntheticPlan(plan){
+  return !!(plan && typeof plan==='object' && !Array.isArray(plan) &&
+            plan.meta && typeof plan.meta==='object' && plan.meta[TEST_MARKER]===true);
+}
+function checkOpenBoundary(plan, testMode){
+  if(testMode && !isSyntheticPlan(plan))
+    return 'TEST BUILD: this file is not a marked synthetic test file. It may be a real guide — open it only in the normal build, on an offline machine.';
+  if(!testMode && isSyntheticPlan(plan))
+    return 'This is a synthetic test file. Open it only in a TEST build of this page.';
+  return null;
+}
+function prepareExportPlan(plan, testMode){
+  const out=JSON.parse(JSON.stringify(plan));
+  if(testMode){
+    out.meta=(out.meta && typeof out.meta==='object' && !Array.isArray(out.meta)) ? out.meta : {};
+    out.meta[TEST_MARKER]=true;
+    return out;
+  }
+  if(isSyntheticPlan(out)) throw new Error('Synthetic test files can only be exported from a TEST build.');
+  return out;
+}
 function networkPresent(){ return navigator.onLine; }
 async function bluetoothAdapterPresent(){
   try{
