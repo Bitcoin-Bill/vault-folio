@@ -109,20 +109,30 @@ def recovery_steps(plan, reveal=False):
 
 
 
-def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_plan=None, edit_plan=None):
+def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_plan=None,
+                     edit_plan=None, close_label='CLOSE GUIDE & CLEAR SESSION'):
     """Distinct UI: step navigation, no editable questionnaire, no export actions.
 
     draw_diagrams (optional) is called as draw_diagrams(box, plan) on the
-    'Understand what exists' step so heirs see the same quorum pictures the
-    owner checked at export time.
+    'Start here' and 'Understand what exists' steps so heirs see the same
+    quorum pictures the owner checked at export time.
+
+    Layout contract: the bottom button bar is packed FIRST with side='bottom'
+    so the expanding scroll area can never squeeze it out; the written step
+    leads, the diagram follows, and notes/checklist live inside the scroll.
     """
     app.clear()
     app.active_plan = plan
     app.header(status='BENEFICIARY VIEW · READ ONLY')
     outer = tk.Frame(app, bg=ui.PAPER)
     outer.pack(fill='both', expand=True, padx=24, pady=16)
+
+    bottom = tk.Frame(outer, bg=ui.PAPER)
+    bottom.pack(fill='x', side='bottom', pady=(10, 0))
+
     tk.Label(outer, text='Your family’s recovery guide', font=ui.F('Georgia', 24), bg=ui.PAPER, fg=ui.INK).pack(anchor='w')
-    tk.Label(outer, text='One step at a time. Notes can be saved back into the encrypted file.', bg=ui.PAPER).pack(anchor='w', pady=(4,16))
+    tk.Label(outer, text='One step at a time. Nothing here changes the sealed file until you press SAVE NOTES.',
+             bg=ui.PAPER).pack(anchor='w', pady=(4,16))
     body = tk.Frame(outer, bg=ui.PAPER); body.pack(fill='both', expand=True)
     nav = tk.Frame(body, bg=ui.PAPER2, width=360)
     nav.pack(side='left', fill='y', padx=(0,18))
@@ -134,11 +144,11 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     title.pack(fill='x', pady=(2,10))
     sheet = ui.ScrollFrame(panel)
     sheet.pack(fill='both', expand=True)
-    diagram_box = tk.Frame(sheet.inner, bg=ui.PAPER)
-    diagram_box.pack(fill='x')
     text = tk.Text(sheet.inner, wrap='word', font=ui.F('Helvetica', 14), height=14, padx=18, pady=16,
                    relief='flat', bg=ui.WHITE, fg=ui.INK)
     text.pack(fill='x')
+    diagram_box = tk.Frame(sheet.inner, bg=ui.PAPER)
+    diagram_box.pack(fill='x', pady=(10, 0))
     index = [0]
     reveal = tk.BooleanVar(value=False)
     def render(number=None):
@@ -183,28 +193,36 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
         choices.insert('end', f'{i+1}. {heading}')
     choices.insert('end', f'{count+1}. Full reference')
     choices.bind('<<ListboxSelect>>', lambda _: render(choices.curselection()[0]) if choices.curselection() else None)
-    notes = tk.Text(outer, height=4, wrap='word', font=ui.F('Helvetica', 12), bg=ui.WHITE, fg=ui.INK)
-    notes.insert('1.0', str(plan.get('heirNotes') or ''))
-    notes.pack(fill='x', pady=(8, 4))
+    tk.Label(sheet.inner, text='PROGRESS CHECKLIST — tick steps as you finish them. Ticks and notes are kept when you press SAVE NOTES.',
+             font=ui.F('Courier', 9), bg=ui.PAPER, fg=ui.HINT, anchor='w', wraplength=700,
+             justify='left').pack(fill='x', pady=(16, 2))
     checks = plan.setdefault('heirChecklist', {})
-    check_row = tk.Frame(outer, bg=ui.PAPER)
+    check_row = tk.Frame(sheet.inner, bg=ui.PAPER)
     check_row.pack(fill='x')
     for number, (heading, _detail) in enumerate(recovery_steps(plan), start=1):
         var = tk.BooleanVar(value=bool(checks.get(str(number))))
         tk.Checkbutton(check_row, text=str(number) + ' ' + heading, variable=var, bg=ui.PAPER, fg=ui.INK,
                        command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
+    tk.Label(sheet.inner, text='YOUR NOTES — private working notes for the family (what you tried, who you called). '
+             'Written into the encrypted file only when you press SAVE NOTES.',
+             font=ui.F('Courier', 9), bg=ui.PAPER, fg=ui.HINT, anchor='w', wraplength=700,
+             justify='left').pack(fill='x', pady=(16, 2))
+    notes = tk.Text(sheet.inner, height=4, wrap='word', font=ui.F('Helvetica', 12), bg=ui.WHITE, fg=ui.INK,
+                    relief='solid', bd=1)
+    notes.insert('1.0', str(plan.get('heirNotes') or ''))
+    notes.pack(fill='x', pady=(0, 4))
     if save_plan is not None:
         def save_notes():
             plan['heirNotes'] = notes.get('1.0', 'end-1c')
             save_plan(plan)
-        tk.Button(outer, text='SAVE NOTES INTO ENCRYPTED FILE', font=ui.F('Courier', 10, 'bold'),
+        tk.Button(sheet.inner, text='SAVE NOTES INTO ENCRYPTED FILE', font=ui.F('Courier', 10, 'bold'),
                   bg=ui.INK, fg=ui.PAPER, relief='flat', padx=14, pady=8, cursor='hand2',
                   command=save_notes).pack(anchor='w', pady=6)
-    tk.Checkbutton(outer, text='Show direct journal / watch-only access details on screen', variable=reveal, command=render, bg=ui.PAPER).pack(anchor='w', pady=10)
-    bottom=tk.Frame(outer,bg=ui.PAPER);bottom.pack(fill='x')
+    tk.Checkbutton(sheet.inner, text='Show direct journal / watch-only access details on screen',
+                   variable=reveal, command=render, bg=ui.PAPER).pack(anchor='w', pady=10)
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
     next_button=ui.btn_primary(bottom,'NEXT STEP →',lambda:render(index[0]+1));next_button.pack_configure(side='left',padx=8)
     if edit_plan is not None:
         ui.btn_primary(bottom, 'EDITOR VIEW', edit_plan, side='left', padx=8)
-    ui.btn_secondary(bottom,'CLOSE GUIDE & CLEAR SESSION',close,side='right')
+    ui.btn_secondary(bottom, close_label, close, side='right')
     render()
