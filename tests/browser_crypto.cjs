@@ -35,5 +35,21 @@ function py(code,input){
  const shown=vm.runInContext('JSON.stringify(beneficiarySteps(guide,true))',context);
  assert(!hidden.includes('journal-only-secret'));assert(shown.includes('journal-only-secret'));
  assert(hidden.includes('Call known trustee'));assert.equal(JSON.stringify(context.guide),before);
- console.log('PASS: browser syntax, catalog parity, Python/browser v1 round trip, wrong passphrase, added sections');
+ // Cross-mode synthetic-file boundary (mirrors the desktop TEST_MARKER gate):
+ // TEST builds open/produce only marked files; normal builds refuse marked files.
+ assert.equal(vm.runInContext("checkOpenBoundary(blankPlan(), false)",context),null);
+ assert.match(vm.runInContext("checkOpenBoundary(blankPlan(), true)",context),/TEST BUILD/);
+ const stamped=vm.runInContext("prepareExportPlan(blankPlan(), true)",context);
+ assert.equal(stamped.meta.syntheticTest,true);
+ assert.equal(vm.runInContext(`checkOpenBoundary(${JSON.stringify(stamped)}, true)`,context),null);
+ assert.match(vm.runInContext(`checkOpenBoundary(${JSON.stringify(stamped)}, false)`,context),/synthetic test file/);
+ assert.throws(()=>vm.runInContext(`prepareExportPlan(${JSON.stringify(stamped)}, false)`,context));
+ assert.equal(vm.runInContext("prepareExportPlan(blankPlan(), false)",context).meta.syntheticTest,undefined);
+ // Cross-edition marker contract: a browser TEST-build v1 export decrypts on the
+ // desktop with the marker intact, so the desktop classifies (and, outside test
+ // mode, refuses) it correctly. The desktop's synthetic-only opener is v2-only
+ // by design; the browser is v1-only — the shared marker is the contract.
+ const testEnv=await vm.runInContext(`encryptPlan(${JSON.stringify(stamped)},'test only passphrase')`,context);
+ py("import json,sys,importlib.util; s=importlib.util.spec_from_file_location('folio','vault-folio.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); p=m.decrypt_plan(json.load(sys.stdin),'test only passphrase'); assert p['meta']['syntheticTest'] is True; print(json.dumps({'ok':True}))",testEnv);
+ console.log('PASS: browser syntax, catalog parity, Python/browser v1 round trip, wrong passphrase, added sections, cross-mode synthetic boundary, cross-edition marker contract');
 })().catch(e=>{console.error(e);process.exitCode=1;});
