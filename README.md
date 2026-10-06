@@ -1,4 +1,14 @@
-# CSIP — Cold Storage Inheritance Package
+# Vault Folio — Cold Storage Inheritance Guide
+
+**Test phase — a development foundation, not a production-ready or audited release.**
+This open-source work can be built on, adapted, and extended to create working
+versions of an offline inheritance-guide app. The current implementation includes
+testable workflows, but a working prototype is not evidence of security or
+readiness for real inheritance plans. Use invented data while evaluating it.
+Real hardware, live Linux, and end-to-end acceptance testing, plus independent
+security review, remain necessary before real-world use.
+
+Previously named **CSIP (Cold Storage Inheritance Package)**.
 
 For synthetic test mode and its limitations, see
 [RAM-SESSION.md](docs/RAM-SESSION.md). It skips all environment checks and
@@ -37,8 +47,11 @@ ciphertext, including a transient sibling used for atomic replacement.
   Bluetooth hardware, an active network interface, a default route, or cannot
   complete any environment check. It checks again during use and locks if the
   environment becomes unsafe. It makes no network requests.
-- **Encryption-only export** — AES-256-GCM, key derived with PBKDF2-HMAC-SHA-256
-  (600,000 rounds). There is no plaintext plan export.
+- **Encryption-only export** — AES-256-GCM. Version-2 packages use a random
+  data key wrapped separately for each enrolled unlock method. Passphrase and
+  question methods use PBKDF2-HMAC-SHA-256 (600,000 rounds) followed by HKDF;
+  YubiKey methods derive their wrapping key from a challenge-response via HKDF.
+  There is no plaintext plan export. See [FILE-FORMAT.md](docs/FILE-FORMAT.md).
 - **In-app heir guide** — decrypts the saved plan in memory and displays a
   setup-specific recovery guide with diagrams. The guide is not written as a
   separate plaintext file.
@@ -59,18 +72,48 @@ access details for journals, watch-only wallets and documents; hints are the def
 **family-question answers**, and **package YubiKey** only unlock this guide.
 Contacts, family clues and custody structure still deserve privacy.
 
-## Open a saved guide
+## Create and open a guide
 
-After decrypting, choose **Beneficiary View** for a read-only, plain-language
-step-by-step journey, or **Plan Editor** to reconfigure the existing guide and
-save a new encrypted copy. Direct access details are masked until revealed.
-Owners can add their own ordered recovery steps, with prerequisites, success
-checks and fallback instructions. See [USER-FLOWS.md](docs/USER-FLOWS.md).
+Choose **START THE GUIDE** for a plain-language setup interview, one question at
+a time. It branches for single-key, multisignature, and uncertain setups; records
+backup-copy arrangements, contacts and recovery-path information; and carries
+those answers into the detailed editor. Unknown answers remain unknown.
+
+After decrypting a saved file, choose **HEIR VIEW** or **EDITOR VIEW**:
+
+- **Heir View** presents step-by-step recovery instructions, a clickable family
+  map, setup diagrams and a full-reference view. Direct journal/watch-only access
+  details are masked until explicitly revealed. The recorded instructions are
+  read-only here, but heirs can add notes and tick a progress checklist.
+- **Save notes into encrypted file** explicitly writes notes and checklist
+  progress back to the opened file. For version-2 packages it preserves every
+  enrolled unlock method; it does not enroll a replacement passphrase. Legacy
+  version-1 saves require a passphrase that successfully opens the current file.
+- **Editor View** warns before opening a saved guide for changes. In normal mode,
+  it also requires an enrolled passphrase for that file, even if the guide was
+  opened with a YubiKey or question set. A file with no passphrase method cannot
+  enter this editor flow. Synthetic test mode skips this additional check.
+- The editor locks populated saved fields that use its shared entry, selection
+  and text controls, and offers separate amendment notes and a reset to the
+  saved snapshot. This is a UI safeguard, not cryptographic immutability or a
+  complete lock on every control. Additions must be saved in an encrypted copy.
+- Editor exports enroll the desired unlock methods again; unlike heir-note
+  saves, they do not automatically preserve the previous method set. Re-exporting
+  does not revoke older copies.
+
+Owners can record ordered family recovery steps, including prerequisites,
+success checks and fallback instructions. Interface themes, adjustable scale
+(1.0–2.4×), scrolling and measured diagram layouts support larger text.
+
+The broader workflow is described in [USER-FLOWS.md](docs/USER-FLOWS.md), but its
+older descriptions of a fully read-only beneficiary interface and unrestricted
+editor selection predate the notes/checklist and passphrase-gated editor updates
+summarized above.
 
 The two repo PDFs and TXT research informed the questions; source mappings and
 limits are documented in [RESEARCH-MAPPING.md](docs/RESEARCH-MAPPING.md).
 
-## New in this preview
+## Unlock methods and planning features
 
 - Independent alternative unlock methods: any enrolled passphrase alone,
   YubiKey alone, or complete 3–5-question set opens the guide. Up to 12 methods.
@@ -112,8 +155,9 @@ what these checks can prove.
 ```bash
 pip install cryptography        # plus tkinter from your OS; optional ykman for keys
 python3 vault-folio.py --self-test   # verify crypto + logic on your machine
-python3 vault-folio.py               # run — must be offline to pass the gate
-python3 vault-folio.py --test-only-synthetic-questionnaire  # UI + encrypted save/open; invented data only
+python3 vault-folio.py               # normal mode: offline + nonpersistent live Linux checks
+python3 vault-folio.py --test-session # UI + encrypted save/open; invented data only
+# --test-only-synthetic-questionnaire is an alias for --test-session
 python3 -B -m unittest discover -s tests -v  # hardware-free regression tests
 node tests/browser_crypto.cjs        # optional browser/Python compatibility test
 ```
@@ -121,6 +165,8 @@ node tests/browser_crypto.cjs        # optional browser/Python compatibility tes
 - Prepare the live Linux image with Python, tkinter, `cryptography`, and (for
   hardware unlock) the official `ykman` CLI before offline use.
 - Other OSes may run source/crypto tests but cannot pass the new RAM-session gate.
+- From the repository directory, `sh test-folio.sh` launches the same synthetic
+  test session. It bypasses environment checks and is not a real-plan shortcut.
 
 For maximum hygiene, boot a live Linux USB (no persistence) on a machine with
 wireless physically removed and run the app and its companion modules from there — this avoids intentional persistent plaintext writes; memory erasure is not guaranteed. See [docs/OPERATIONAL-SECURITY.md](docs/OPERATIONAL-SECURITY.md).
@@ -154,10 +200,14 @@ vault-folio.py            the offline desktop app (live Linux required for RAM m
 folio_security.py         version-2 alternative-method envelope
 folio_hardware_ui.py      desktop enrollment / unlock flow
 folio_catalog.py          editable questionnaire catalog and fields
+folio_phase1.py           branching plain-language setup interview
+folio_theme.py            interface themes, font scaling and appearance controls
+folio_ui.py               shared desktop widgets and scrolling
+folio_synthetic.py        marked synthetic test-file handling
 folio_memory.py           conservative Linux RAM-session checks
 folio_storage.py          atomic ciphertext-only save
 folio_document.py         loaded-plan schema validation
-folio_beneficiary.py      separate read-only step-by-step heir interface
+folio_beneficiary.py      heir instructions, notes and progress checklist
 tests/                    offline cryptography and compatibility checks
 browser-edition/           companion prototype for future plugin integration
 docs/FILE-FORMAT.md       the encrypted JSON envelope specification
@@ -165,9 +215,22 @@ docs/OPERATIONAL-SECURITY.md  how and where to run this safely
 docs/research/            background research on cold-storage inheritance
 ```
 
+## Building on this test-phase work
+
+You may fork and build on this MIT-licensed code to create working versions:
+adapt the interface, complete unfinished behavior, improve safeguards, and test
+your implementation. Retain the license and copyright notice. Keep the
+guide-only scope clear: this project documents recovery arrangements rather than
+creating wallets or handling Bitcoin signing secrets.
+
+Start with synthetic data and the test commands above. Validate the complete
+create → encrypt → reopen → heir notes → editor additions workflow, including
+every intended unlock method, on the hardware and live environment you intend
+to support. The existing tests are a starting point, not a release certification.
+
 ## Review status
 
-This is a review preview, not an audited release. Automated tests cover software
+This is test-phase work, not an audited release. Automated tests cover software
 behavior with simulated hardware. Real YubiKey, GUI, and nonpersistent live Linux
 acceptance are outstanding. Start with [REVIEWER-GUIDE.md](docs/REVIEWER-GUIDE.md)
 for code ownership, request flow, threat boundaries and test commands.
