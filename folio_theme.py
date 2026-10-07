@@ -243,6 +243,7 @@ def _rescale(widget, old, new):
                             w.itemconfigure(item, font=replacement)
                 except tk.TclError:
                     pass
+            w.event_generate('<<FolioScaleChanged>>')
         for child in w.winfo_children():
             walk(child)
 

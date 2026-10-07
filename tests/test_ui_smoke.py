@@ -116,10 +116,12 @@ class ScreenConstructionTests(unittest.TestCase):
 
     def test_big_picture_reflows_at_minimum_window_and_large_text(self):
         try:
+            self.vf.themes.set_scaling(self.app, 1.0)
+            self.app.geometry('1100x760')
+            cv, sheet, _ = self._big_picture_widgets()
             for factor in (1.0, 1.6):
                 self.vf.themes.set_scaling(self.app, factor)
-                self.app.geometry('1100x760')
-                cv, sheet, _ = self._big_picture_widgets()
+                self.app.update_idletasks()
                 tags = dict.fromkeys(cv.gettags(i)[0] for i in cv.find_all()
                                      if cv.type(i) == 'rectangle')
                 rectangles = [cv.find_withtag(tag)[0] for tag in tags]

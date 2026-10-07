@@ -337,6 +337,7 @@ def draw_big_picture(box, plan, explanation=None):
             select(selected[0])
 
     cv.bind('<Configure>', redraw)
+    cv.bind('<<FolioScaleChanged>>', redraw)
     return {'canvas': cv, 'select': select, 'boxes': boxes}
 
 
