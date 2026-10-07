@@ -31,7 +31,7 @@ def hardware_job(app, operation, on_success, environment_safe, key_labels=None):
     def cancel():
         cancelled.set()
         status.set("Cancelling; waiting for the device operation to finish…")
-    tk.Button(window, text="Cancel", command=cancel).pack(pady=12)
+    ui.btn_secondary(window, "Cancel", cancel).pack(pady=12)
     window.protocol("WM_DELETE_WINDOW", cancel)
 
     def provider(challenge, slot):
@@ -175,8 +175,8 @@ def add_export_controls(parent, app, plan, environment_safe):
         def toggle():
             first.configure(show="" if show.get() else "*")
             second.configure(show="" if show.get() else "*")
-        tk.Checkbutton(dialog, text="Show passphrase", variable=show, command=toggle,
-                       bg=ui.WHITE, font=ui.F_BODY).pack(anchor="w", padx=22, pady=(0, 12))
+        ui.check_row(dialog, "Show passphrase", show, command=toggle,
+                     bg="card", font=ui.F_BODY).pack(anchor="w", padx=22, pady=(0, 12))
         def accept():
             password = first.get()
             if len(password) < 12 or password != second.get():

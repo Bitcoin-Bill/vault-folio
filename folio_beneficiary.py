@@ -201,8 +201,8 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     check_row.pack(fill='x')
     for number, (heading, _detail) in enumerate(recovery_steps(plan), start=1):
         var = tk.BooleanVar(value=bool(checks.get(str(number))))
-        tk.Checkbutton(check_row, text=str(number) + ' ' + heading, variable=var, bg=ui.PAPER, fg=ui.INK,
-                       command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
+        ui.check_row(check_row, str(number) + ' ' + heading, var, bg='paper',
+                     command=lambda key=str(number), value=var: checks.__setitem__(key, value.get())).pack(anchor='w')
     tk.Label(sheet.inner, text='YOUR NOTES — private working notes for the family (what you tried, who you called). '
              'Written into the encrypted file only when you press SAVE NOTES.',
              font=ui.F('Courier', 9), bg=ui.PAPER, fg=ui.HINT, anchor='w', wraplength=700,
@@ -215,11 +215,10 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
         def save_notes():
             plan['heirNotes'] = notes.get('1.0', 'end-1c')
             save_plan(plan)
-        tk.Button(sheet.inner, text='SAVE NOTES INTO ENCRYPTED FILE', font=ui.F('Courier', 10, 'bold'),
-                  bg=ui.INK, fg=ui.PAPER, relief='flat', padx=14, pady=8, cursor='hand2',
-                  command=save_notes).pack(anchor='w', pady=6)
-    tk.Checkbutton(sheet.inner, text='Show direct journal / watch-only access details on screen',
-                   variable=reveal, command=render, bg=ui.PAPER).pack(anchor='w', pady=10)
+        ui.btn_primary(sheet.inner, 'SAVE NOTES INTO ENCRYPTED FILE',
+                       save_notes).pack(anchor='w', pady=6)
+    ui.check_row(sheet.inner, 'Show direct journal / watch-only access details on screen',
+                 reveal, command=render, bg='paper').pack(anchor='w', pady=10)
     previous=ui.btn_secondary(bottom,'← PREVIOUS',lambda:render(index[0]-1));previous.pack_configure(side='left')
     next_button=ui.btn_primary(bottom,'NEXT STEP →',lambda:render(index[0]+1));next_button.pack_configure(side='left',padx=8)
     if edit_plan is not None:

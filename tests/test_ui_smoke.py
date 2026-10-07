@@ -104,7 +104,7 @@ class ScreenConstructionTests(unittest.TestCase):
         self.app.update_idletasks()
         boxes = []
         def find(widget):
-            if isinstance(widget, tk.Checkbutton):
+            if isinstance(widget, (tk.Checkbutton, self.vf.ui.CheckRow)):
                 boxes.append(widget)
             for child in widget.winfo_children():
                 find(child)
@@ -127,7 +127,7 @@ class ScreenConstructionTests(unittest.TestCase):
         found = {}
 
         def walk(widget):
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, (tk.Button, self.vf.ui.FlatButton)):
                 found[str(widget.cget("text"))] = widget
             for child in widget.winfo_children():
                 walk(child)
@@ -162,7 +162,7 @@ class ScreenConstructionTests(unittest.TestCase):
         buttons = {}
 
         def walk(widget):
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, (tk.Button, self.vf.ui.FlatButton)):
                 buttons[str(widget.cget("text"))] = widget
             for child in widget.winfo_children():
                 walk(child)
@@ -191,7 +191,7 @@ class ScreenConstructionTests(unittest.TestCase):
         buttons = {}
 
         def walk(widget):
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, (tk.Button, self.vf.ui.FlatButton)):
                 buttons[str(widget.cget("text"))] = widget
             for child in widget.winfo_children():
                 walk(child)
@@ -204,6 +204,30 @@ class ScreenConstructionTests(unittest.TestCase):
         self.assertIsNotNone(wizard.vault_intake)             # interview still active
         self.assertEqual(wizard.intake_value.get(), "multi")  # pending answer restored
         self.assertEqual(wizard.vault_intake["answers"], {})  # but never auto-committed
+
+    def test_intake_options_are_drawn_rows_that_set_the_answer(self):
+        """macOS Aqua renders native radiobutton labels invisibly (blank
+        options), so intake choices must be app-drawn RadioRows that still
+        drive the same StringVar."""
+        plan = self.plan()
+        wizard = self.vf.start_wizard(self.app, plan)
+        wizard.goto(next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
+        wizard.begin_vault_intake()
+        self.app.update_idletasks()
+        rows = []
+
+        def walk(widget):
+            if isinstance(widget, self.vf.ui.RadioRow):
+                rows.append(widget)
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        self.assertGreaterEqual(len(rows), 3, "intake choice rows not rendered")
+        labels = [str(row.cget("text")) for row in rows]
+        self.assertTrue(any("single-signature" in label for label in labels), labels)
+        rows[1].invoke()
+        self.assertEqual(wizard.intake_value.get(), "multi")
 
     def test_pending_interview_answer_survives_back_without_committing(self):
         wizard = self.vf.start_wizard(self.app, self.plan())
