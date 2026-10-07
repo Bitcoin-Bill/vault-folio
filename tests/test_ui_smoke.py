@@ -651,6 +651,15 @@ class SettingsDialogTests(unittest.TestCase):
         dialog.destroy()
         self.app.update_idletasks()
 
+    def test_seedqr_medium_option_mirrored_in_both_editions(self):
+        import folio_catalog
+        self.assertIn("Paper QR (SeedQR)", self.vf.MEDIA)        # vault key backup media
+        self.assertIn("Paper QR (SeedQR)", folio_catalog.MEDIA)  # backup record media
+        path = os.path.join(os.path.dirname(__file__), "..", "browser-edition", "index.html")
+        with open(path, encoding="utf-8") as handle:
+            html = handle.read()
+        self.assertIn("Paper QR (SeedQR)", html)
+
 
 if __name__ == "__main__":
     unittest.main()

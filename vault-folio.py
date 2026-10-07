@@ -90,8 +90,8 @@ GENMETHODS = ["Dice / coins / cards + offline calculator (EntropyLab)",
               "Device RNG (device-generated)", "Bitcoin Core wallet generation",
               "Imported existing seed", "Undecided"]
 MEDIA = ["Steel / metal plate", "Paper (NATO-phonetic, checksum)",
-         "Archival optical disc + printed paper", "Encrypted digital file",
-         "Hardware device only (no separate backup)"]
+         "Paper QR (SeedQR)", "Archival optical disc + printed paper",
+         "Encrypted digital file", "Hardware device only (no separate backup)"]
 PASSPHRASE = ["None — explicit record of that", "Stored at a separate site",
               "Sealed copy held by trustee", "Memory only (dangerous)", "Undecided"]
 MECHANISMS = [
