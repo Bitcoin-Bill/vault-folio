@@ -211,6 +211,16 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
                     relief='solid', bd=1)
     notes.insert('1.0', str(plan.get('heirNotes') or ''))
     notes.pack(fill='x', pady=(0, 4))
+
+    def rebuild_beneficiary():
+        # Button-style changes rebuild the screen; keep typed-but-unsaved notes.
+        try:
+            plan['heirNotes'] = notes.get('1.0', 'end-1c')
+        except tk.TclError:
+            pass
+        show_beneficiary(app, plan, close, full_reference, draw_diagrams,
+                         save_plan, edit_plan, close_label)
+    app.screen_rebuilder = rebuild_beneficiary
     if save_plan is not None:
         def save_notes():
             plan['heirNotes'] = notes.get('1.0', 'end-1c')

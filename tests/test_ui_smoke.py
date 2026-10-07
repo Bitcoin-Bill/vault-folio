@@ -229,6 +229,36 @@ class ScreenConstructionTests(unittest.TestCase):
         rows[1].invoke()
         self.assertEqual(wizard.intake_value.get(), "multi")
 
+    def test_button_style_toggle_switches_button_widgets(self):
+        """Session-only button style: flat draws FlatButtons, classic uses
+        native tk.Buttons; switching rebuilds the current screen in place."""
+        import tkinter as tk
+        ui = self.vf.ui
+
+        def buttons():
+            found = []
+            def walk(widget):
+                if isinstance(widget, (tk.Button, ui.FlatButton)):
+                    found.append(widget)
+                for child in widget.winfo_children():
+                    walk(child)
+            walk(self.app)
+            return found
+
+        try:
+            self.vf.themes.set_button_style("classic", self.app)
+            self.app.update_idletasks()
+            classic = buttons()
+            self.assertTrue(classic, "no buttons rendered in classic mode")
+            self.assertFalse(any(isinstance(b, ui.FlatButton) for b in classic))
+            self.vf.themes.set_button_style("flat", self.app)
+            self.app.update_idletasks()
+            self.assertTrue(any(isinstance(b, ui.FlatButton) for b in buttons()))
+        finally:
+            ui.set_button_style("flat")
+            self.vf.home_screen(self.app)
+            self.app.update_idletasks()
+
     def test_pending_interview_answer_survives_back_without_committing(self):
         wizard = self.vf.start_wizard(self.app, self.plan())
         wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))

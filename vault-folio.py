@@ -1094,6 +1094,7 @@ class App(tk.Tk):
         self.guide_env = None     # original envelope (public parts)
         self.guide_dek = None     # data key from the open; lets notes re-seal losslessly
         self.saved_snapshot = None  # copy of the plan as last saved; cleared with the session
+        self.screen_rebuilder = None  # rebuilds the current screen (button style changes)
         self.ubuntu_test = ubuntu_test
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
@@ -1328,6 +1329,7 @@ def home_screen(app):
     app.guide_dek = None
     discard_plan(getattr(app, "saved_snapshot", None))  # CLEAR SESSION means it
     app.saved_snapshot = None
+    app.screen_rebuilder = lambda: home_screen(app)
     app.header()
     frame = ScrollFrame(app)
     frame.pack(fill="both", expand=True)
@@ -1669,6 +1671,7 @@ class Wizard:
         instead of starting a fresh one."""
         app = self.app
         app.clear()
+        app.screen_rebuilder = self._build_chrome
         app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
         if getattr(app, "guide_path", None):
             tk.Label(app, text="SAVED GUIDE · Editing changes what the family will later rely on. "
