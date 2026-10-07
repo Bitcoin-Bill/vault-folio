@@ -109,6 +109,221 @@ def recovery_steps(plan, reveal=False):
 
 
 
+# --------------------------------------------------------------------------
+# The big picture: a word-light, clickable recovery chain derived from the plan
+# --------------------------------------------------------------------------
+def big_picture(plan):
+    """Derive the visual recovery chain from recorded facts; gaps stay explicit.
+
+    Returns a list of stages. Each stage is {'joiner': '+'|'→'|None,
+    'boxes': [box]}, where box = {'icon', 'title', 'detail', 'about'}.
+    Boxes in a stage sit side by side joined by the joiner; stages stack
+    top to bottom in recovery order. Pure data — no widgets here.
+    """
+    p = visible_plan(plan)
+    stages = [{'joiner': None, 'boxes': [{
+        'icon': 'guide',
+        'title': 'Sealed guide',
+        'detail': 'Opened — that was step one',
+        'about': 'Everything the family needs is mapped in this file. It holds no keys and '
+                 'cannot move bitcoin; it explains what exists, where the pieces live, and '
+                 'who can help. Keep the file and its unlock details safe and separate.'}]}]
+    vaults = p.get('vaults', [])
+    if not vaults:
+        stages.append({'joiner': '+', 'boxes': [{
+            'icon': 'vault',
+            'title': 'No wallet recorded',
+            'detail': 'Ask the executor for details',
+            'about': 'The owner has not described a wallet arrangement in this guide yet. '
+                     'Without it the rest of the picture cannot be drawn.'}]})
+    for v in vaults:
+        name = v.get('name') or 'Unnamed arrangement'
+        m, n = v.get('m'), v.get('n')
+        rule = f'needs {m} of {n} keys to spend' if m and n else 'signing rule not recorded'
+        boxes = [{
+            'icon': 'vault',
+            'title': name,
+            'detail': rule,
+            'about': ('One arrangement may hold several keys, but spending needs the recorded '
+                      'quorum of DIFFERENT keys. Two copies of one key still count as one key.'
+                      if m and n else
+                      'The signing rule for this arrangement was not recorded. Ask the named '
+                      'technical helper before touching anything.')}]
+        for i, key in enumerate(v.get('keys', []), 1):
+            bits = [b for b in (key.get('medium'), key.get('locations')) if b]
+            boxes.append({
+                'icon': 'key',
+                'title': key.get('label') or key.get('device') or f'Key {i}',
+                'detail': ' · '.join(bits) or 'backup and location not recorded',
+                'about': 'One signing key. Its backup medium and where it lives are recorded '
+                         'in this guide; gather it only as the written steps describe, and '
+                         'never type seed words into this app or any website.'})
+        if (v.get('timelock') or {}).get('enabled'):
+            boxes.append({
+                'icon': 'clock',
+                'title': 'Delayed path',
+                'detail': 'a timer-based route also exists',
+                'about': 'Besides the main rule, this arrangement has a delayed spending path. '
+                         'A timer does not detect death or move coins by itself; the written '
+                         'recovery-route step explains what it means here.'})
+        stages.append({'joiner': '+', 'boxes': boxes})
+    coordinator = next((v.get('coordinator') for v in vaults if v.get('coordinator')), None)
+    copies = len(p.get('backups', {}).get('descriptorLocations', []))
+    stages.append({'joiner': '+', 'boxes': [
+        {'icon': 'laptop',
+         'title': coordinator or 'Wallet software',
+         'detail': 'the coordinator program' + ('' if coordinator else ' — not recorded'),
+         'about': 'The wallet program that builds transactions and holds the watch-only view. '
+                  'It is replaceable: any compatible wallet software can stand in, so a dead '
+                  'vendor does not strand the coins.'},
+        {'icon': 'map',
+         'title': 'The wallet map',
+         'detail': (f'{copies} recorded copy location(s)' if copies else 'copy locations not recorded'),
+         'about': 'The wallet map (output descriptor) tells wallet software what exists '
+                  'without holding any keys. It is not a secret that can spend, but it is '
+                  'needed to rebuild the watch-only view.'}]})
+    stages.append({'joiner': None, 'boxes': [{
+        'icon': 'assemble',
+        'title': 'Rebuild the wallet',
+        'detail': 'load the map into the software first',
+        'about': 'Load the wallet map into the coordinator software on a safe computer. This '
+                 'recreates the watch-only wallet: the family can SEE balances and addresses '
+                 'before anything can move.'}]})
+    first = vaults[0] if vaults else {}
+    fm, fn = first.get('m'), first.get('n')
+    sign_detail = (f'any {fm} of the {fn} keys approve' if fm and fn
+                   else 'the required keys approve')
+    stages.append({'joiner': '→', 'boxes': [
+        {'icon': 'sign',
+         'title': 'Sign',
+         'detail': sign_detail,
+         'about': 'Each required key approves the transaction on its own device. Check the '
+                  'destination and amount on every device screen. Start with a small test '
+                  'send, exactly as the rehearsal step describes.'},
+        {'icon': 'broadcast',
+         'title': 'Broadcast',
+         'detail': 'the software sends it to the network',
+         'about': 'The signed transaction is sent to the Bitcoin network by the wallet '
+                  'software. Once confirmed it is public and cannot be undone — which is why '
+                  'the test send comes first.'}]})
+    return stages
+
+
+def _draw_icon(cv, kind, cx, cy, color, tags=()):
+    """Small line glyph at the top of a big-picture box. Canvas primitives only."""
+    def rect(*a, **kw):
+        return cv.create_rectangle(*a, outline=color, width=2, tags=tags, **kw)
+    def line(*a, **kw):
+        return cv.create_line(*a, fill=color, width=kw.pop('width', 2), tags=tags, **kw)
+    def oval(*a, **kw):
+        return cv.create_oval(*a, outline=color, width=kw.pop('width', 2),
+                              fill=kw.pop('fill', ''), tags=tags, **kw)
+    if kind == 'guide':
+        rect(cx - 8, cy - 10, cx + 8, cy + 10)
+        line(cx - 4, cy - 4, cx + 4, cy - 4)
+        line(cx - 4, cy + 1, cx + 4, cy + 1)
+    elif kind == 'key':
+        oval(cx - 9, cy - 6, cx + 1, cy + 4)
+        line(cx + 1, cy - 1, cx + 10, cy - 1)
+        line(cx + 6, cy - 1, cx + 6, cy + 4)
+        line(cx + 10, cy - 1, cx + 10, cy + 4)
+    elif kind == 'vault':
+        oval(cx - 10, cy - 2, cx - 2, cy + 6)
+        oval(cx + 2, cy - 2, cx + 10, cy + 6)
+        oval(cx - 4, cy - 10, cx + 4, cy - 2)
+    elif kind == 'clock':
+        oval(cx - 9, cy - 9, cx + 9, cy + 9)
+        line(cx, cy, cx, cy - 6)
+        line(cx, cy, cx + 4, cy + 2)
+    elif kind == 'laptop':
+        rect(cx - 9, cy - 8, cx + 9, cy + 3)
+        line(cx - 12, cy + 8, cx + 12, cy + 8)
+    elif kind == 'map':
+        rect(cx - 10, cy - 8, cx + 10, cy + 8)
+        line(cx - 3, cy - 8, cx - 3, cy + 8, width=1)
+        line(cx + 4, cy - 8, cx + 4, cy + 8, width=1)
+    elif kind == 'assemble':
+        oval(cx - 7, cy - 7, cx + 7, cy + 7)
+        oval(cx - 2, cy - 2, cx + 2, cy + 2)
+        line(cx - 10, cy - 10, cx - 7, cy - 7)
+        line(cx + 10, cy + 10, cx + 7, cy + 7)
+    elif kind == 'sign':
+        line(cx - 8, cy + 8, cx + 6, cy - 6)
+        cv.create_polygon(cx + 6, cy - 6, cx + 9, cy - 9, cx + 9, cy - 4,
+                          outline=color, fill='', tags=tags)
+        line(cx - 10, cy + 10, cx - 4, cy + 10)
+    elif kind == 'broadcast':
+        oval(cx - 2, cy + 4, cx + 2, cy + 8, fill=color)
+        cv.create_arc(cx - 8, cy - 6, cx + 8, cy + 8, start=30, extent=120, style='arc',
+                      outline=color, width=2, tags=tags)
+        cv.create_arc(cx - 13, cy - 11, cx + 13, cy + 13, start=30, extent=120, style='arc',
+                      outline=color, width=2, tags=tags)
+
+
+def draw_big_picture(box, plan):
+    """Draw the recovery chain into `box`; clicking a box explains it below."""
+    stages = big_picture(plan)
+    # Explanation row sits ABOVE the canvas so a click answers in place —
+    # no scrolling down past the chain to read what a piece is.
+    detail_title = tk.Label(box, text='Click any piece to learn what it is',
+                            font=ui.F('Courier', 10, 'bold'), bg=ui.PAPER, fg=ui.INK, anchor='w')
+    detail_title.pack(anchor='w')
+    detail_body = tk.Label(box, text='', font=ui.F_BODY, bg=ui.PAPER, fg=ui.BODY_TEXT,
+                           anchor='w', justify='left', wraplength=720)
+    detail_body.pack(anchor='w', pady=(2, 10))
+    cv = tk.Canvas(box, bg=ui.PAPER, highlightthickness=0)
+    cv.pack(fill='x', anchor='w')
+    boxes = {}  # tag -> (background rectangle id, box dict)
+
+    def select(tag):
+        for name, (rect, _box) in boxes.items():
+            cv.itemconfigure(rect, outline=(ui.INK if name == tag else ui.LINE),
+                             width=(2 if name == tag else 1))
+        detail_title.configure(text=boxes[tag][1]['title'])
+        detail_body.configure(text=boxes[tag][1]['about'])
+
+    box_w, box_h, gap, arrow = 176, 112, 34, 30
+    max_row = 4
+    y = 8
+    for stage in stages:
+        row = stage['boxes']
+        for chunk_start in range(0, len(row), max_row):
+            chunk = row[chunk_start:chunk_start + max_row]
+            x = 8
+            for j, b in enumerate(chunk):
+                tag = f"bp_{y}_{j}"
+                rect = cv.create_rectangle(x, y + 16, x + box_w, y + 16 + box_h,
+                                           fill=ui.WHITE, outline=ui.LINE, width=1, tags=(tag,))
+                cx = x + box_w // 2
+                _draw_icon(cv, b['icon'], cx, y + 38, ui.INK, tags=(tag,))
+                # title is top-anchored so a long one wraps DOWN toward the
+                # bottom-anchored detail; short titles stay under the icon
+                cv.create_text(cx, y + 56, text=b['title'], anchor='n',
+                               font=ui.F('Courier', 10, 'bold'),
+                               fill=ui.INK, width=box_w - 16, tags=(tag,))
+                # detail is bottom-anchored so a long title can wrap down and a
+                # long detail can wrap up without either spilling out of the box
+                cv.create_text(cx, y + 16 + box_h - 6, text=b['detail'], anchor='s',
+                               font=ui.F('Helvetica', 9),
+                               fill=ui.HINT, width=box_w - 14, tags=(tag,))
+                cv.tag_bind(tag, '<Button-1>', lambda _e, t=tag: select(t))
+                boxes[tag] = (rect, b)
+                if stage['joiner'] and j < len(chunk) - 1:
+                    cv.create_text(x + box_w + gap // 2, y + 16 + box_h // 2,
+                                   text=stage['joiner'], font=ui.F('Courier', 14, 'bold'),
+                                   fill=ui.HINT)
+                x += box_w + gap
+            y += box_h + 16
+            if chunk_start + max_row < len(row):
+                y += 6  # wrapped continuation rows of one stage sit tighter
+        cv.create_text(8 + box_w // 2, y + 6, text='↓', font=ui.F('Courier', 14), fill=ui.HINT)
+        y += arrow
+    widest = max(len(s['boxes']) for s in stages)
+    cv.configure(height=y - arrow + 8,
+                 width=8 + min(max_row, widest) * box_w + min(max_row, widest - 1) * gap + 8)
+    return {'canvas': cv, 'select': select, 'boxes': boxes}
+
+
 def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_plan=None,
                      edit_plan=None, close_label='CLOSE GUIDE & CLEAR SESSION'):
     """Distinct UI: step navigation, no editable questionnaire, no export actions.
@@ -151,24 +366,57 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     diagram_box.pack(fill='x', pady=(10, 0))
     index = [0]
     reveal = tk.BooleanVar(value=False)
+    def nav_model(steps):
+        # 'big' sits after 'Start here' as an unnumbered visual page; step and
+        # checklist numbering is unchanged so saved files keep their ticks.
+        return ([('step', 0), ('big', None)] +
+                [('step', i) for i in range(1, len(steps))] + [('full', None)])
+
+    def nav_label(item, steps):
+        kind, i = item
+        if kind == 'big':
+            return '▸ The big picture'
+        if kind == 'full':
+            return f'{len(steps) + 1}. Full reference'
+        return f'{i + 1}. {steps[i][0]}'
+
     def render(number=None):
         if number is not None: index[0] = number
         steps = recovery_steps(plan, reveal.get())
-        index[0] = max(0, min(index[0], len(steps)))  # len(steps) = Full reference
-        total = len(steps) + 1
-        if index[0] == len(steps):
+        model = nav_model(steps)
+        index[0] = max(0, min(index[0], len(model) - 1))
+        kind, step_i = model[index[0]]
+        big = kind == 'big'
+        if kind == 'full':
             heading, content = 'Full reference (advanced)', full_reference(visible_plan(plan, reveal.get()))
+        elif big:
+            heading = 'The big picture'
+            content = ('This is the whole recovery as a set of pieces, top to bottom. '
+                       'No instructions here — just what the pieces are and how they fit. '
+                       'Click any piece for a short explanation.')
         else:
-            heading, content = steps[index[0]]
-        step_lbl.configure(text=f'STEP {index[0] + 1} OF {total}')
+            heading, content = steps[step_i]
+        total = len(steps) + 1
+        step_lbl.configure(text=('VISUAL OVERVIEW' if big else
+                                 f'STEP {step_i + 1} OF {total}' if kind == 'step'
+                                 else f'STEP {total} OF {total}'))
         title.configure(text=heading)
         text.configure(state='normal')
         text.delete('1.0', 'end')
         text.insert('1.0', content or 'Nothing was recorded for this step.')
+        # The big picture's intro is three lines; keep the Text widget short
+        # there so the chain itself is on screen without scrolling.
+        text.configure(height=5 if big else 14)
         text.configure(state='disabled')
         for w in diagram_box.winfo_children():
             w.destroy()
-        if draw_diagrams is not None and heading in ('Start here', 'Understand what exists'):
+        if big:
+            try:
+                draw_big_picture(diagram_box, visible_plan(plan, reveal.get()))
+            except Exception:
+                tk.Label(diagram_box, text='The big picture could not be drawn. The written steps are still the guide.',
+                         bg=ui.PAPER, fg=ui.FLAG, wraplength=640, justify='left').pack(anchor='w')
+        elif draw_diagrams is not None and heading in ('Start here', 'Understand what exists'):
             try:
                 draw_diagrams(diagram_box, visible_plan(plan, reveal.get()))
             except Exception:
@@ -177,7 +425,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
         text.yview_moveto(0)
         sheet.scroll_to_top()
         previous.configure(state='normal' if index[0] else 'disabled')
-        next_button.configure(state='normal' if index[0] < len(steps) else 'disabled')
+        next_button.configure(state='normal' if index[0] < len(model) - 1 else 'disabled')
         choices.selection_clear(0, 'end')
         choices.selection_set(index[0])
         choices.see(index[0])
@@ -189,9 +437,8 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     nav_scroll = ttk.Scrollbar(nav, command=choices.yview)
     nav_scroll.pack(side='right', fill='y')
     choices.configure(yscrollcommand=nav_scroll.set)
-    for i,(heading,_) in enumerate(recovery_steps(plan)):
-        choices.insert('end', f'{i+1}. {heading}')
-    choices.insert('end', f'{count+1}. Full reference')
+    for item in nav_model(recovery_steps(plan)):
+        choices.insert('end', nav_label(item, recovery_steps(plan)))
     choices.bind('<<ListboxSelect>>', lambda _: render(choices.curselection()[0]) if choices.curselection() else None)
     tk.Label(sheet.inner, text='PROGRESS CHECKLIST — tick steps as you finish them. Ticks and notes are kept when you press SAVE NOTES.',
              font=ui.F('Courier', 9), bg=ui.PAPER, fg=ui.HINT, anchor='w', wraplength=700,

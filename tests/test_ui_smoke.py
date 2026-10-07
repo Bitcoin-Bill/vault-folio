@@ -94,6 +94,42 @@ class ScreenConstructionTests(unittest.TestCase):
             self.app.update_idletasks()
         self.assertEqual(errors, [])
 
+    def test_big_picture_page_draws_and_explains(self):
+        """The word-light recovery chain: page renders from plan facts, and
+        clicking a box shows its plain-language explanation."""
+        import tkinter as tk
+        plan = self.plan()  # 2-of-3 vault with Coldcard A, Jade B, Signer C
+        self.vf.show_heir(self.app, plan)
+        self.app.update_idletasks()
+
+        def find(widget, cls, out):
+            if isinstance(widget, cls):
+                out.append(widget)
+            for child in widget.winfo_children():
+                find(child, cls, out)
+
+        navs, canvases, labels = [], [], []
+        find(self.app, tk.Listbox, navs)
+        self.assertIn("big picture", str(navs[0].get(1)))
+        navs[0].selection_clear(0, "end")
+        navs[0].selection_set(1)
+        navs[0].event_generate("<<ListboxSelect>>")
+        self.app.update_idletasks()
+        find(self.app, tk.Canvas, canvases)
+        self.assertTrue(canvases, "big picture canvas missing")
+        cv = max(canvases, key=lambda c: len(c.find_all()))  # not the ScrollFrame's window canvas
+        self.assertGreater(len(cv.find_all()), 20, "chain not drawn")
+        # click the Coldcard A key box
+        target = next(i for i in cv.find_all()
+                      if cv.type(i) == "text" and cv.itemcget(i, "text") == "Coldcard A")
+        tag = cv.gettags(target)[0]
+        x0, y0, x1, y1 = cv.bbox(tag)
+        cv.event_generate("<Button-1>", x=(x0 + x1) // 2, y=(y0 + y1) // 2)
+        self.app.update_idletasks()
+        find(self.app, tk.Label, labels)
+        self.assertTrue(any("One signing key" in str(lb.cget("text")) for lb in labels),
+                        "clicking the box did not show its explanation")
+
     def test_heir_checklist_state_survives_reopen(self):
         """Regression: checklist keys were written as str but read as int,
         so saved checkmarks always came back unchecked."""
