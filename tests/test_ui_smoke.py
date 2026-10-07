@@ -259,6 +259,59 @@ class ScreenConstructionTests(unittest.TestCase):
             self.vf.home_screen(self.app)
             self.app.update_idletasks()
 
+    def test_style_switch_preserves_uncommitted_intake(self):
+        wizard = self.vf.start_wizard(self.app, self.plan())
+        wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
+        wizard.begin_vault_intake()
+        wizard.intake_value.set("multi")
+        wizard.advance_vault_intake()
+        key = wizard.vault_intake_questions()[wizard.vault_intake["index"]][0]
+        wizard.intake_value.set("unfinished invented answer")
+        try:
+            for style in ("classic", "flat"):
+                self.vf.themes.set_button_style(style, self.app)
+                self.app.update()
+                self.assertEqual(wizard.intake_value.get(), "unfinished invented answer")
+                self.assertNotIn(key, wizard.vault_intake["answers"])
+        finally:
+            self.vf.ui.set_button_style("flat")
+            self.vf.home_screen(self.app)
+
+    def test_flat_button_release_cancellation_and_keyboard(self):
+        self.vf.home_screen(self.app)
+        calls = []
+        button = self.vf.ui.FlatButton(self.app, text="REMOVE invented record",
+                                      command=lambda: calls.append(True))
+        button.pack()
+        self.app.update()
+        label = button._label
+        label.event_generate("<ButtonPress-1>", x=5, y=5)
+        self.app.update()
+        self.assertEqual(calls, [])
+        label.event_generate("<ButtonRelease-1>", x=-100, y=-100)
+        self.app.update()
+        self.assertEqual(calls, [])
+        label.event_generate("<ButtonPress-1>", x=5, y=5)
+        label.event_generate("<ButtonRelease-1>", x=5, y=5)
+        self.app.update()
+        self.assertEqual(len(calls), 1)
+        button.configure(state="disabled")
+        label.event_generate("<ButtonPress-1>", x=5, y=5)
+        label.event_generate("<ButtonRelease-1>", x=5, y=5)
+        self.assertEqual(len(calls), 1)
+        button.configure(state="normal")
+        button.focus_force()
+        self.app.update()
+        for key in ("space", "Return"):
+            before = len(calls)
+            button.event_generate("<KeyPress-" + key + ">")
+            button.event_generate("<KeyPress-" + key + ">")
+            self.assertEqual(len(calls), before)
+            button.event_generate("<KeyRelease-" + key + ">")
+            self.app.update()
+            self.assertEqual(len(calls), before + 1)
+        button.destroy()
+
     def test_pending_interview_answer_survives_back_without_committing(self):
         wizard = self.vf.start_wizard(self.app, self.plan())
         wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))

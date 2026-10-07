@@ -149,12 +149,18 @@ class FlatButton(tk.Frame):
         self._label = tk.Label(self, text=text, font=font, padx=padx, pady=pady,
                                anchor=anchor, justify=justify, wraplength=wraplength)
         self._label.pack(fill="both", expand=True)
+        self._armed = None
+        self._key_release_job = None
         for widget in (self, self._label):
             widget.bind("<Enter>", self._enter)
             widget.bind("<Leave>", self._leave)
-            widget.bind("<Button-1>", self._click)
-        self.bind("<Return>", self._click)
-        self.bind("<space>", self._click)
+            widget.bind("<Button-1>", self._press)
+            widget.bind("<ButtonRelease-1>", self._release)
+        for key in ("Return", "space"):
+            self.bind("<KeyPress-" + key + ">", self._key_press)
+            self.bind("<KeyRelease-" + key + ">", self._key_release)
+        self.bind("<FocusOut>", self._cancel)
+        self.bind("<Destroy>", self._cancel)
         self._paint()
 
     # -- tk.Button-compatible surface --------------------------------------
@@ -192,6 +198,8 @@ class FlatButton(tk.Frame):
             self._command = kw.pop("command")
         if "state" in kw:
             self._state = "disabled" if kw.pop("state") == "disabled" else "normal"
+            if self._state == "disabled":
+                self._cancel()
             repaint = True
         if kw:
             super().configure(kw)
@@ -212,9 +220,45 @@ class FlatButton(tk.Frame):
     def _leave(self, _event):
         self._paint(hovered=False)
 
-    def _click(self, _event):
-        self.focus_set()
-        self.invoke()
+    def _cancel(self, _event=None):
+        self._armed = None
+        if self._key_release_job is not None:
+            self.after_cancel(self._key_release_job)
+            self._key_release_job = None
+
+    def _press(self, _event):
+        self._cancel()
+        if self._state == "normal":
+            self.focus_set()
+            self._armed = "mouse"
+        return "break"
+
+    def _release(self, event):
+        armed = self._armed == "mouse"
+        self._cancel()
+        target = self.winfo_containing(event.x_root, event.y_root)
+        if armed and target in (self, self._label):
+            self.invoke()
+        return "break"
+
+    def _key_press(self, event):
+        # X11 autorepeat emits release/press pairs; cancel the pending release.
+        if self._key_release_job is not None:
+            self.after_cancel(self._key_release_job)
+            self._key_release_job = None
+        if self._state == "normal" and self._armed is None:
+            self._armed = event.keysym
+        return "break"
+
+    def _key_release(self, event):
+        if self._armed == event.keysym and self._key_release_job is None:
+            def finish():
+                armed = self._armed == event.keysym
+                self._key_release_job = None
+                self._armed = None
+                if armed and self.focus_get() == self:
+                    self.invoke()
+            self._key_release_job = self.after_idle(finish)
         return "break"
 
     def _paint(self, hovered=False):

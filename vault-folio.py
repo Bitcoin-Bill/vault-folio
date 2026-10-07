@@ -1663,6 +1663,10 @@ class Wizard:
         self.vault_intake = None
         self._build_chrome()
 
+    def rebuild_preserving_input(self):
+        self.stash_vault_intake_answer()
+        self._build_chrome()
+
     def _build_chrome(self):
         """(Re)build the editor chrome around the current state and render.
 
@@ -1671,7 +1675,7 @@ class Wizard:
         instead of starting a fresh one."""
         app = self.app
         app.clear()
-        app.screen_rebuilder = self._build_chrome
+        app.screen_rebuilder = self.rebuild_preserving_input
         app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
         if getattr(app, "guide_path", None):
             tk.Label(app, text="SAVED GUIDE · Editing changes what the family will later rely on. "
