@@ -443,42 +443,43 @@ def set_button_style(name):
     return _button_style
 
 
-def btn_primary(parent, text, command, padx=14, pady=8, **pack_kw):
+def btn_primary(parent, text, command, ipadx=14, ipady=8, **pack_kw):
+    """ipadx/ipady pad the button itself; padx/pady in pack_kw space it in the layout."""
     if _button_style == "classic":
         b = tk.Button(parent, text=text, font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-                      padx=padx, pady=pady, cursor="hand2", activebackground=INK_SOFT,
+                      padx=ipadx, pady=ipady, cursor="hand2", activebackground=INK_SOFT,
                       activeforeground=PAPER, command=command)
     else:
         b = FlatButton(parent, text=text, command=command, font=F_MONO_B,
-                       bg="ink", fg="paper", border="ink", padx=padx, pady=pady)
+                       bg="ink", fg="paper", border="ink", padx=ipadx, pady=ipady)
     if pack_kw:
         b.pack(**pack_kw)
     return b
 
 
-def btn_secondary(parent, text, command, padx=12, pady=6, **pack_kw):
+def btn_secondary(parent, text, command, ipadx=12, ipady=6, **pack_kw):
     if _button_style == "classic":
         b = tk.Button(parent, text=text, font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                      highlightthickness=0, padx=padx, pady=pady, cursor="hand2",
+                      highlightthickness=0, padx=ipadx, pady=ipady, cursor="hand2",
                       activebackground=PAPER2, activeforeground=INK, command=command)
     else:
         b = FlatButton(parent, text=text, command=command, font=F_MONO,
-                       bg="paper", fg="ink", border="ink", padx=padx, pady=pady)
+                       bg="paper", fg="ink", border="ink", padx=ipadx, pady=ipady)
     if pack_kw:
         b.pack(**pack_kw)
     return b
 
 
-def btn_danger(parent, text, command, bg="card", font=None, padx=8, pady=4, **pack_kw):
+def btn_danger(parent, text, command, bg="card", font=None, ipadx=8, ipady=4, **pack_kw):
     font = font or _theme.F("Courier", 8)
     if _button_style == "classic":
         b = tk.Button(parent, text=text, font=font, bg=FlatButton._color(bg), fg=FLAG,
-                      relief="flat", padx=padx, pady=pady, cursor="hand2",
+                      relief="flat", padx=ipadx, pady=ipady, cursor="hand2",
                       activebackground=TEST_BG, activeforeground=FLAG, command=command)
     else:
         b = FlatButton(parent, text=text, command=command, font=font,
                        bg=bg, fg="flag", hover_bg="testbg", hover_fg="flag",
-                       border=None, padx=padx, pady=pady)
+                       border=None, padx=ipadx, pady=ipady)
     if pack_kw:
         b.pack(**pack_kw)
     return b

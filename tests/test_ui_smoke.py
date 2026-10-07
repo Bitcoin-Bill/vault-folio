@@ -537,5 +537,59 @@ class ScreenConstructionTests(unittest.TestCase):
             themes.set_scaling(self.app, 1.0)
 
 
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class UbuntuTestModeExportTests(unittest.TestCase):
+    """page_export only takes its real branch outside synthetic test mode, so
+    the shared test app (test_mode=True) never exercised it: a button-factory
+    contract bug crashed the page below the unlock-methods card and hid SAVE.
+    Render it in ubuntu-test mode, which takes the real branch."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(ubuntu_test=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    def _export_page(self):
+        wizard = self.vf.start_wizard(self.app, self.vf.blank_plan())
+        wizard.goto(len(self.vf.STEP_DEFS) - 1)  # "export" is the last step
+        self.app.update_idletasks()
+        return wizard
+
+    @staticmethod
+    def _flat_buttons(widget):
+        found = []
+        for child in widget.winfo_children():
+            if isinstance(child, UbuntuTestModeExportTests.vf.ui.FlatButton):
+                found.append(child)
+            found.extend(UbuntuTestModeExportTests._flat_buttons(child))
+        return found
+
+    def test_export_page_renders_unlock_and_save_controls(self):
+        self._export_page()
+        texts = {b.cget("text") for b in self._flat_buttons(self.app)}
+        self.assertIn("ADD PASSPHRASE", texts)
+        self.assertIn("SAVE ENCRYPTED GUIDE", texts)
+
+    def test_passphrase_dialog_opens(self):
+        """Same contract bug crashed the enrollment dialog (pady tuple)."""
+        self._export_page()
+        add = next(b for b in self._flat_buttons(self.app)
+                   if b.cget("text") == "ADD PASSPHRASE")
+        before = set(self.app.winfo_children())
+        add.invoke()
+        self.app.update_idletasks()
+        dialogs = [w for w in self.app.winfo_children() if w not in before]
+        self.assertEqual(len(dialogs), 1, "passphrase dialog did not open")
+        texts = {b.cget("text") for b in self._flat_buttons(dialogs[0])}
+        self.assertIn("USE THIS PASSPHRASE", texts)
+        dialogs[0].destroy()
+        self.app.update_idletasks()
+
+
 if __name__ == "__main__":
     unittest.main()
