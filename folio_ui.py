@@ -41,25 +41,30 @@ def install_scrolling(root):
             widget = getattr(widget, "master", None)
         return inner, sheet
 
+    # Pixels per wheel notch for sheet canvases. Canvas scroll "units" are
+    # viewport fractions unless yscrollincrement is set, so without this a
+    # single notch jumped a large, font-dependent share of the page.
+    notch_px = 48
+
     def roll(event, direction):
         inner, sheet = targets(event.widget)
         if inner is not None:
             first, last = map(float, inner.yview())
             can_scroll_inner = (direction < 0 and first > 0) or (direction > 0 and last < 1)
             if can_scroll_inner:
-                inner.yview_scroll(direction, "units")
+                inner.yview_scroll(direction * 3, "units")  # three lines per notch
             elif sheet is not None:
-                sheet.canvas.yview_scroll(direction, "units")
+                sheet.canvas.yview_scroll(direction * notch_px, "units")
             else:
-                inner.yview_scroll(direction, "units")
+                inner.yview_scroll(direction * 3, "units")
         elif sheet is not None:
-            sheet.canvas.yview_scroll(direction, "units")
+            sheet.canvas.yview_scroll(direction * notch_px, "units")
         if inner is not None or sheet is not None:
             return "break"
 
     root.bind_all("<MouseWheel>", lambda event: roll(event, -1 if event.delta > 0 else 1))
-    root.bind_all("<Button-4>", lambda event: roll(event, -3))
-    root.bind_all("<Button-5>", lambda event: roll(event, 3))
+    root.bind_all("<Button-4>", lambda event: roll(event, -1))
+    root.bind_all("<Button-5>", lambda event: roll(event, 1))
 
 
 class ScrollFrame(tk.Frame):
@@ -67,7 +72,9 @@ class ScrollFrame(tk.Frame):
 
     def __init__(self, parent, **kw):
         super().__init__(parent, **kw)
-        self.canvas = tk.Canvas(self, bg=PAPER, highlightthickness=0)
+        # yscrollincrement=1 makes canvas scroll "units" mean single pixels,
+        # so wheel notches move a fixed pixel distance on every platform.
+        self.canvas = tk.Canvas(self, bg=PAPER, highlightthickness=0, yscrollincrement=1)
         self.inner = tk.Frame(self.canvas, bg=PAPER)
         self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vsb.set)

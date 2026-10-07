@@ -591,5 +591,37 @@ class UbuntuTestModeExportTests(unittest.TestCase):
         self.app.update_idletasks()
 
 
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class WheelScrollTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(test_mode=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    def test_wheel_notch_scrolls_sheet_by_fixed_pixels(self):
+        """Canvas scroll units default to viewport fractions; with
+        yscrollincrement=1 one notch must move a small fixed pixel count."""
+        import tkinter as tk
+        sheet = self.vf.ui.ScrollFrame(self.app)
+        sheet.pack(fill="both", expand=True)
+        filler = tk.Frame(sheet.inner, height=4000, width=200)
+        filler.pack()
+        self.app.update_idletasks()
+        filler.event_generate("<Button-5>", x=5, y=5)
+        self.app.update_idletasks()
+        top = sheet.canvas.yview()[0]
+        height = sheet.canvas.bbox("all")[3]
+        moved = top * height
+        self.assertGreater(moved, 0, "wheel notch did not scroll the sheet")
+        self.assertLessEqual(moved, 80, f"one notch moved {moved:.0f}px — viewport-fraction scrolling")
+        sheet.destroy()
+        self.app.update_idletasks()
+
+
 if __name__ == "__main__":
     unittest.main()
