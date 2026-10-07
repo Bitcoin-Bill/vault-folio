@@ -262,3 +262,35 @@ class ThemedEntryTests(unittest.TestCase):
                     kw = {k.arg for k in node.keywords if k.arg}
                     self.assertFalse("bg" in kw and "fg" not in kw,
                                      f"{name}:{node.lineno} tk.Label sets bg without fg")
+
+
+class ScrollScalingTests(unittest.TestCase):
+    """macOS trackpads send a stream of tiny MouseWheel deltas; scrolling a
+    full 48px notch per micro-event made two-finger scrolling unusable."""
+
+    def test_mousewheel_pixels_scales_with_delta(self):
+        if ui._DARWIN:
+            self.assertEqual(ui.mousewheel_pixels(1), -12)
+            self.assertEqual(ui.mousewheel_pixels(-1), 12)
+            self.assertEqual(ui.mousewheel_pixels(10), -120)
+        else:
+            self.assertEqual(ui.mousewheel_pixels(120), -48)
+            self.assertEqual(ui.mousewheel_pixels(-120), 48)
+            self.assertAlmostEqual(ui.mousewheel_pixels(30), -12)
+
+    def test_no_raw_ttk_combobox_outside_ui_helper(self):
+        """All dropdowns go through ui.option_combo so they open on click and
+        keep wheel behavior neutralized."""
+        import os
+        import re
+        repo = os.path.join(os.path.dirname(__file__), "..")
+        raw = re.compile(r"(?<!t)ttk\.Combobox\(")
+        for name in ThemedEntryTests.SOURCE_FILES:
+            path = os.path.join(repo, name)
+            if not os.path.exists(path):
+                continue
+            with open(path) as fh:
+                for lineno, line in enumerate(fh, 1):
+                    self.assertIsNone(raw.search(line),
+                                      f"{name}:{lineno} creates a raw ttk.Combobox; "
+                                      "use ui.option_combo()")

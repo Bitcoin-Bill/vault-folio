@@ -1899,7 +1899,7 @@ class Wizard:
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
         self.vars[path] = v  # keep the Tcl variable alive: a locked combobox attaches no binding closure, so without this the StringVar is garbage-collected and the combo shows blank
-        cb = ttk.Combobox(parent, textvariable=v, values=options, state="readonly", font=F_BODY)
+        cb = ui.option_combo(parent, v, options, font=F_BODY)
         cb.pack(fill="x")
         if not self.lock_saved(cb, path):
             cb.bind("<<ComboboxSelected>>", lambda *_: (setp(self.plan, path, v.get()), self.mark_dirty()))
@@ -2075,7 +2075,7 @@ class Wizard:
                          wraplength=700, justify="left").pack(anchor="w")
                 if opts:
                     v = tk.StringVar(value=h.get(key, ""))
-                    cb = ttk.Combobox(inner, textvariable=v, values=opts, state="readonly", font=themes.F("Helvetica", 10))
+                    cb = ui.option_combo(inner, v, opts, font=themes.F("Helvetica", 10))
                     cb.pack(fill="x")
                     cb.bind("<<ComboboxSelected>>", lambda *_: (h.__setitem__(key, v.get()), self.mark_dirty()))
                 else:
@@ -2153,7 +2153,7 @@ class Wizard:
                             row.pop("directAccess", None)
                         self.mark_dirty()
                     value.trace_add("write", update)
-                    widget = ttk.Combobox(frame, textvariable=value, values=options) if options else ttk.Entry(frame, textvariable=value)
+                    widget = ui.option_combo(frame, value, options, editable=True) if options else ttk.Entry(frame, textvariable=value)
                     widget.pack(fill="x", padx=12)
                     if key == "directAccess":
                         widget.configure(show="*")
@@ -2430,7 +2430,7 @@ class Wizard:
                      anchor="w", wraplength=700, justify="left").pack(anchor="w")
             if opts:
                 var = tk.StringVar(value=obj.get(key, ""))
-                cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=themes.F("Helvetica", 10))
+                cb = ui.option_combo(inner, var, opts, font=themes.F("Helvetica", 10))
                 cb.pack(fill="x")
                 cb.bind("<<ComboboxSelected>>", lambda *_: (obj.__setitem__(key, var.get()),
                                                             self.mark_dirty(), self._maybe_redraw_vault(key)))
@@ -2440,7 +2440,7 @@ class Wizard:
                 ui.text_entry(inner, textvariable=var, font=themes.F("Helvetica", 10)).pack(fill="x")
 
         row("Vault name", "name")
-        row("Preset source / guide revision (optional)", "profileSource")
+        row("Where did this setup come from? (guide name / revision, optional)", "profileSource")
         row("Custom architecture / provider details", "customArchitecture")
         row("Purpose / tier", "tier", TIERS,
             "Theft-resistance and inheritance want opposite shapes. A small timelocked family pile plus a "
@@ -2545,10 +2545,13 @@ class Wizard:
                      wraplength=700, justify="left").pack(anchor="w")
             if opts:
                 var = tk.StringVar(value=k.get(key, ""))
-                cb = ttk.Combobox(inner, textvariable=var, values=opts, state="readonly", font=themes.F("Helvetica", 10))
+                editable = key == "passphrase"
+                cb = ui.option_combo(inner, var, opts, editable=editable, font=themes.F("Helvetica", 10))
                 cb.pack(fill="x")
                 cb.bind("<<ComboboxSelected>>", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty(),
                                                             self._maybe_redraw_vault(key)))
+                if editable:  # typed text never fires ComboboxSelected
+                    var.trace_add("write", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty()))
             else:
                 var = tk.StringVar(value=k.get(key, ""))
                 var.trace_add("write", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty()))
@@ -2632,7 +2635,7 @@ class Wizard:
             tk.Label(fr, text="Choose the stored copy type.", font=themes.F("Helvetica", 8), bg=WHITE,
                      fg=HINT).grid(row=1, column=1, sticky="w", padx=8)
             v2 = tk.StringVar(value=d.get("format", ""))
-            cb = ttk.Combobox(fr, textvariable=v2, font=themes.F("Helvetica", 10), state="readonly",
+            cb = ui.option_combo(fr, v2, font=themes.F("Helvetica", 10),
                               values=["Printed paper", "Plaintext digital file", "Encrypted digital file",
                                       "Wallet descriptor export (BSMS / Core / Sparrow)"], width=26)
             cb.grid(row=2, column=1, sticky="ew", padx=8)
