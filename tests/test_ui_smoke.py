@@ -120,7 +120,9 @@ class ScreenConstructionTests(unittest.TestCase):
                 self.vf.themes.set_scaling(self.app, factor)
                 self.app.geometry('1100x760')
                 cv, sheet, _ = self._big_picture_widgets()
-                rectangles = [i for i in cv.find_all() if cv.type(i) == 'rectangle']
+                tags = dict.fromkeys(cv.gettags(i)[0] for i in cv.find_all()
+                                     if cv.type(i) == 'rectangle')
+                rectangles = [cv.find_withtag(tag)[0] for tag in tags]
                 self.assertGreater(len(rectangles), 4)
                 for rect in rectangles:
                     tag = cv.gettags(rect)[0]
