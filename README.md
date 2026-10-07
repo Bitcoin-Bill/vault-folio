@@ -102,7 +102,8 @@ After decrypting a saved file, choose **HEIR VIEW** or **EDITOR VIEW**:
 
 Owners can record ordered family recovery steps, including prerequisites,
 success checks and fallback instructions. Interface themes, adjustable scale
-(1.0–2.4×), scrolling and measured diagram layouts support larger text.
+(1.0–2.4×), a session-only button style choice (browser-style or operating-system
+buttons), scrolling and measured diagram layouts support larger text.
 
 The broader workflow is described in [USER-FLOWS.md](docs/USER-FLOWS.md), but its
 older descriptions of a fully read-only beneficiary interface and unrestricted
