@@ -167,13 +167,16 @@ def big_picture(plan):
                          'A timer does not detect death or move coins by itself; the written '
                          'recovery-route step explains what it means here.'})
         stages.append({'joiner': '+', 'boxes': boxes})
-    coordinator = next((v.get('coordinator') for v in vaults if v.get('coordinator')), None)
+    coordinator = vaults[0].get('coordinator') if len(vaults) == 1 else None
+    software_details = '\n'.join(
+        f"{v.get('name') or 'Unnamed arrangement'}: {v.get('coordinator') or 'not recorded'}"
+        for v in vaults) or 'coordinator not recorded'
     copies = len(p.get('backups', {}).get('descriptorLocations', []))
     stages.append({'joiner': '+', 'boxes': [
         {'icon': 'laptop',
          'title': coordinator or 'Wallet software',
-         'detail': 'the coordinator program' + ('' if coordinator else ' — not recorded'),
-         'about': 'The wallet program that builds transactions and holds the watch-only view. '
+         'detail': software_details,
+         'about': 'Use the software recorded for each wallet and its own recovery route. The wallet program builds transactions and holds the watch-only view. '
                   'It is replaceable: any compatible wallet software can stand in, so a dead '
                   'vendor does not strand the coins.'},
         {'icon': 'map',
@@ -189,10 +192,11 @@ def big_picture(plan):
         'about': 'Load the wallet map into the coordinator software on a safe computer. This '
                  'recreates the watch-only wallet: the family can SEE balances and addresses '
                  'before anything can move.'}]})
-    first = vaults[0] if vaults else {}
+    first = vaults[0] if len(vaults) == 1 else {}
     fm, fn = first.get('m'), first.get('n')
     sign_detail = (f'any {fm} of the {fn} keys approve' if fm and fn
-                   else 'the required keys approve')
+                   else ('Each wallet: follow its recorded signing rule' if len(vaults) > 1
+                         else 'signing rule not recorded'))
     stages.append({'joiner': '→', 'boxes': [
         {'icon': 'sign',
          'title': 'Sign',
@@ -260,67 +264,79 @@ def _draw_icon(cv, kind, cx, cy, color, tags=()):
                       outline=color, width=2, tags=tags)
 
 
-def draw_big_picture(box, plan):
-    """Draw the recovery chain into `box`; clicking a box explains it below."""
+def draw_big_picture(box, plan, explanation=None):
+    """Draw a responsive chain; the caller keeps explanations outside the sheet."""
     stages = big_picture(plan)
-    # Explanation row sits ABOVE the canvas so a click answers in place —
-    # no scrolling down past the chain to read what a piece is.
-    detail_title = tk.Label(box, text='Click any piece to learn what it is',
+    explanation = explanation if explanation is not None else box
+    detail_title = tk.Label(explanation, text='Click any piece to learn what it is',
                             font=ui.F('Courier', 10, 'bold'), bg=ui.PAPER, fg=ui.INK, anchor='w')
-    detail_title.pack(anchor='w')
-    detail_body = tk.Label(box, text='', font=ui.F_BODY, bg=ui.PAPER, fg=ui.BODY_TEXT,
-                           anchor='w', justify='left', wraplength=720)
-    detail_body.pack(anchor='w', pady=(2, 10))
-    cv = tk.Canvas(box, bg=ui.PAPER, highlightthickness=0)
+    detail_title.pack(fill='x')
+    detail_body = tk.Label(explanation, text='', font=ui.F_BODY, bg=ui.PAPER,
+                           fg=ui.BODY_TEXT, anchor='w', justify='left', wraplength=600)
+    detail_body.pack(fill='x', pady=(2, 10))
+    explanation.bind('<Configure>', lambda e: detail_body.configure(wraplength=max(80, e.width - 8)))
+    cv = tk.Canvas(box, bg=ui.PAPER, highlightthickness=0, width=1)
     cv.pack(fill='x', anchor='w')
-    boxes = {}  # tag -> (background rectangle id, box dict)
+    boxes = {}
+    selected = [None]
 
     def select(tag):
-        for name, (rect, _box) in boxes.items():
-            cv.itemconfigure(rect, outline=(ui.INK if name == tag else ui.LINE),
-                             width=(2 if name == tag else 1))
+        selected[0] = tag
+        for name, (rect, _) in boxes.items():
+            cv.itemconfigure(rect, outline=ui.INK if name == tag else ui.LINE,
+                             width=2 if name == tag else 1)
         detail_title.configure(text=boxes[tag][1]['title'])
         detail_body.configure(text=boxes[tag][1]['about'])
 
-    box_w, box_h, gap, arrow = 176, 112, 34, 30
-    max_row = 4
-    y = 8
-    for stage in stages:
-        row = stage['boxes']
-        for chunk_start in range(0, len(row), max_row):
-            chunk = row[chunk_start:chunk_start + max_row]
-            x = 8
-            for j, b in enumerate(chunk):
-                tag = f"bp_{y}_{j}"
-                rect = cv.create_rectangle(x, y + 16, x + box_w, y + 16 + box_h,
-                                           fill=ui.WHITE, outline=ui.LINE, width=1, tags=(tag,))
-                cx = x + box_w // 2
-                _draw_icon(cv, b['icon'], cx, y + 38, ui.INK, tags=(tag,))
-                # title is top-anchored so a long one wraps DOWN toward the
-                # bottom-anchored detail; short titles stay under the icon
-                cv.create_text(cx, y + 56, text=b['title'], anchor='n',
-                               font=ui.F('Courier', 10, 'bold'),
-                               fill=ui.INK, width=box_w - 16, tags=(tag,))
-                # detail is bottom-anchored so a long title can wrap down and a
-                # long detail can wrap up without either spilling out of the box
-                cv.create_text(cx, y + 16 + box_h - 6, text=b['detail'], anchor='s',
-                               font=ui.F('Helvetica', 9),
-                               fill=ui.HINT, width=box_w - 14, tags=(tag,))
-                cv.tag_bind(tag, '<Button-1>', lambda _e, t=tag: select(t))
-                boxes[tag] = (rect, b)
-                if stage['joiner'] and j < len(chunk) - 1:
-                    cv.create_text(x + box_w + gap // 2, y + 16 + box_h // 2,
-                                   text=stage['joiner'], font=ui.F('Courier', 14, 'bold'),
-                                   fill=ui.HINT)
-                x += box_w + gap
-            y += box_h + 16
-            if chunk_start + max_row < len(row):
-                y += 6  # wrapped continuation rows of one stage sit tighter
-        cv.create_text(8 + box_w // 2, y + 6, text='↓', font=ui.F('Courier', 14), fill=ui.HINT)
-        y += arrow
-    widest = max(len(s['boxes']) for s in stages)
-    cv.configure(height=y - arrow + 8,
-                 width=8 + min(max_row, widest) * box_w + min(max_row, widest - 1) * gap + 8)
+    def redraw(_event=None):
+        width = cv.winfo_width()
+        if width < 32:
+            return
+        cv.delete('all')
+        boxes.clear()
+        gap, margin = 34, 8
+        columns = max(1, min(4, (width - 2 * margin + gap) // (176 + gap)))
+        box_w = min(240, (width - 2 * margin - gap * (columns - 1)) // columns)
+        y = 8
+        for si, stage in enumerate(stages):
+            row = stage['boxes']
+            for start in range(0, len(row), columns):
+                chunk = row[start:start + columns]
+                drawn = []
+                row_height = 112
+                for j, item in enumerate(chunk):
+                    tag = f'bp_{si}_{start + j}'
+                    x = margin + j * (box_w + gap)
+                    cx = x + box_w / 2
+                    rect = cv.create_rectangle(x, y, x + box_w, y + 112,
+                                               fill=ui.WHITE, outline=ui.LINE, tags=(tag,))
+                    _draw_icon(cv, item['icon'], cx, y + 22, ui.INK, tags=(tag,))
+                    title = cv.create_text(cx, y + 40, text=item['title'], anchor='n',
+                                           font=ui.F('Courier', 10, 'bold'), fill=ui.INK,
+                                           width=max(1, box_w - 16), tags=(tag,))
+                    title_bottom = cv.bbox(title)[3]
+                    detail = cv.create_text(cx, title_bottom + 8, text=item['detail'], anchor='n',
+                                            font=ui.F('Helvetica', 9), fill=ui.HINT,
+                                            width=max(1, box_w - 16), tags=(tag,))
+                    row_height = max(row_height, cv.bbox(detail)[3] - y + 12)
+                    boxes[tag] = (rect, item)
+                    cv.tag_bind(tag, '<Button-1>', lambda _e, t=tag: select(t))
+                    drawn.append((rect, x))
+                for j, (rect, x) in enumerate(drawn):
+                    cv.coords(rect, x, y, x + box_w, y + row_height)
+                    if stage['joiner'] and j < len(drawn) - 1:
+                        cv.create_text(x + box_w + gap / 2, y + row_height / 2,
+                                       text=stage['joiner'], font=ui.F('Courier', 14, 'bold'), fill=ui.HINT)
+                y += row_height + 16
+            if si < len(stages) - 1:
+                cv.create_text(margin + box_w / 2, y + 8, text='↓',
+                               font=ui.F('Courier', 14), fill=ui.HINT)
+                y += 36
+        cv.configure(height=y)
+        if selected[0] in boxes:
+            select(selected[0])
+
+    cv.bind('<Configure>', redraw)
     return {'canvas': cv, 'select': select, 'boxes': boxes}
 
 
@@ -357,6 +373,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
     step_lbl.pack(fill='x')
     title = tk.Label(panel, font=ui.F('Georgia', 20), bg=ui.PAPER, fg=ui.INK, anchor='w', wraplength=760)
     title.pack(fill='x', pady=(2,10))
+    explanation = tk.Frame(panel, bg=ui.PAPER)
     sheet = ui.ScrollFrame(panel)
     sheet.pack(fill='both', expand=True)
     text = tk.Text(sheet.inner, wrap='word', font=ui.F('Helvetica', 14), height=14, padx=18, pady=16,
@@ -410,9 +427,13 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
         text.configure(state='disabled')
         for w in diagram_box.winfo_children():
             w.destroy()
+        for child in explanation.winfo_children():
+            child.destroy()
+        explanation.pack_forget()
         if big:
+            explanation.pack(fill='x', before=sheet)
             try:
-                draw_big_picture(diagram_box, visible_plan(plan, reveal.get()))
+                draw_big_picture(diagram_box, visible_plan(plan, reveal.get()), explanation)
             except Exception:
                 tk.Label(diagram_box, text='The big picture could not be drawn. The written steps are still the guide.',
                          bg=ui.PAPER, fg=ui.FLAG, wraplength=640, justify='left').pack(anchor='w')

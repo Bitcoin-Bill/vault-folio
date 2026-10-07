@@ -94,6 +94,78 @@ class ScreenConstructionTests(unittest.TestCase):
             self.app.update_idletasks()
         self.assertEqual(errors, [])
 
+    def _big_picture_widgets(self):
+        import tkinter as tk
+        self.vf.show_heir(self.app, self.plan())
+        self.app.update_idletasks()
+        def walk(w):
+            yield w
+            for child in w.winfo_children():
+                yield from walk(child)
+        nav = next(w for w in walk(self.app) if isinstance(w, tk.Listbox))
+        nav.selection_clear(0, 'end')
+        nav.selection_set(1)
+        nav.event_generate('<<ListboxSelect>>')
+        self.app.update_idletasks()
+        canvas = max((w for w in walk(self.app) if isinstance(w, tk.Canvas)),
+                     key=lambda w: len(w.find_all()))
+        sheet = canvas.master
+        while not isinstance(sheet, self.vf.ui.ScrollFrame):
+            sheet = sheet.master
+        return canvas, sheet, walk
+
+    def test_big_picture_reflows_at_minimum_window_and_large_text(self):
+        try:
+            for factor in (1.0, 1.6):
+                self.vf.themes.set_scaling(self.app, factor)
+                self.app.geometry('1100x760')
+                cv, sheet, _ = self._big_picture_widgets()
+                rectangles = [i for i in cv.find_all() if cv.type(i) == 'rectangle']
+                self.assertGreater(len(rectangles), 4)
+                for rect in rectangles:
+                    tag = cv.gettags(rect)[0]
+                    x0, y0, x1, y1 = cv.bbox(tag)
+                    self.assertGreaterEqual(x0, 0)
+                    self.assertLessEqual(x1, cv.winfo_width())
+                    texts = [i for i in cv.find_withtag(tag) if cv.type(i) == 'text']
+                    self.assertLess(cv.bbox(texts[0])[3], cv.bbox(texts[1])[1])
+                    self.assertLessEqual(cv.bbox(texts[1])[3], cv.coords(rect)[3])
+                    # Move each box's center into the visible vertical viewport.
+                    content_y = cv.winfo_rooty() - sheet.inner.winfo_rooty() + (y0 + y1) / 2
+                    total = sheet.canvas.bbox('all')[3]
+                    sheet.canvas.yview_moveto(max(0, (content_y - sheet.canvas.winfo_height()/2) / total))
+                    self.app.update_idletasks()
+                    center = cv.winfo_rooty() + (y0 + y1) / 2
+                    self.assertGreaterEqual(center, sheet.canvas.winfo_rooty())
+                    self.assertLessEqual(center, sheet.canvas.winfo_rooty() + sheet.canvas.winfo_height())
+        finally:
+            self.vf.themes.set_scaling(self.app, 1.0)
+            self.app.geometry('1280x900')
+
+    def test_big_picture_lower_click_explanation_stays_in_viewport(self):
+        import tkinter as tk
+        self.app.geometry('1100x760')
+        try:
+            cv, sheet, walk = self._big_picture_widgets()
+            item = next(i for i in cv.find_all() if cv.type(i) == 'text'
+                        and cv.itemcget(i, 'text') == 'Broadcast')
+            x0, y0, x1, y1 = cv.bbox(item)
+            content_y = cv.winfo_rooty() - sheet.inner.winfo_rooty() + (y0+y1)/2
+            sheet.canvas.yview_moveto((content_y - sheet.canvas.winfo_height()/2) / sheet.canvas.bbox('all')[3])
+            self.app.update_idletasks()
+            cv.event_generate('<Button-1>', x=int((x0+x1)/2), y=int((y0+y1)/2))
+            self.app.update_idletasks()
+            label = next(w for w in walk(self.app) if isinstance(w, tk.Label)
+                         and str(w.cget('text')).startswith('The signed transaction'))
+            self.assertTrue(label.winfo_ismapped())
+            self.assertGreaterEqual(label.winfo_rooty(), self.app.winfo_rooty())
+            self.assertLessEqual(label.winfo_rooty()+label.winfo_height(),
+                                 sheet.canvas.winfo_rooty())
+            self.assertLess(label.winfo_rooty()+label.winfo_height(),
+                            self.app.winfo_rooty()+self.app.winfo_height())
+        finally:
+            self.app.geometry('1280x900')
+
     def test_big_picture_page_draws_and_explains(self):
         """The word-light recovery chain: page renders from plan facts, and
         clicking a box shows its plain-language explanation."""

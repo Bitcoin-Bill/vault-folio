@@ -40,6 +40,24 @@ class GuideTests(unittest.TestCase):
         self.assertEqual(old['accessRecords'],[])
         self.assertEqual(old['instructions'],[])
 
+    def test_big_picture_keeps_mixed_wallet_routes_distinct(self):
+        plan = {'vaults': [
+            {'name': 'Wallet A', 'm': 1, 'n': 1, 'coordinator': 'Software A'},
+            {'name': 'Wallet B', 'm': 2, 'n': 3, 'coordinator': 'Software B'},
+            {'name': 'Wallet C'}]}
+        stages = big_picture(plan)
+        boxes = [b for stage in stages for b in stage['boxes']]
+        software = next(b for b in boxes if b['icon'] == 'laptop')
+        self.assertIn('Wallet A: Software A', software['detail'])
+        self.assertIn('Wallet B: Software B', software['detail'])
+        self.assertIn('Wallet C: not recorded', software['detail'])
+        self.assertIn('needs 1 of 1', boxes[1]['detail'])
+        self.assertIn('needs 2 of 3', boxes[2]['detail'])
+        self.assertIn('not recorded', boxes[3]['detail'])
+        sign = next(b for b in boxes if b['icon'] == 'sign')
+        self.assertIn('Each wallet', sign['detail'])
+        self.assertNotIn('any 1', sign['detail'])
+
     def test_big_picture_derives_chain_from_plan(self):
         """The visual overview is pure presentation: stages come from recorded
         facts, gaps stay explicit, and no plan data is required to exist."""
