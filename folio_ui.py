@@ -308,8 +308,10 @@ class _ChoiceRow(tk.Frame):
         self._label = tk.Label(self, text=text, font=font, anchor="w",
                                justify="left", wraplength=wraplength, cursor="hand2")
         self._label.pack(side="left", anchor="n")
+        self._pressed = False
         for widget in (self, self._canvas, self._label):
-            widget.bind("<Button-1>", self._click)
+            widget.bind("<Button-1>", self._press)
+            widget.bind("<ButtonRelease-1>", self._release)
         self.bind("<Return>", self._click)
         self.bind("<space>", self._click)
         self._trace = variable.trace_add("write", lambda *_: self._repaint_selection())
@@ -338,6 +340,19 @@ class _ChoiceRow(tk.Frame):
     def _click(self, _event):
         self.focus_set()
         self.invoke()
+        return "break"
+
+    def _press(self, _event):
+        self._pressed = True
+        self.focus_set()
+        return "break"
+
+    def _release(self, event):
+        was_pressed = self._pressed
+        self._pressed = False
+        target = self.winfo_containing(event.x_root, event.y_root)
+        if was_pressed and target in (self, self._canvas, self._label):
+            self.invoke()
         return "break"
 
     # -- tk-compatible shims (widget walks in tests) -------------------------

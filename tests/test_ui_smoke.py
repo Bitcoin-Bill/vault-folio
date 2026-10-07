@@ -312,6 +312,31 @@ class ScreenConstructionTests(unittest.TestCase):
             self.assertEqual(len(calls), before + 1)
         button.destroy()
 
+    def test_choice_rows_release_inside_and_drag_away(self):
+        import tkinter as tk
+        self.vf.home_screen(self.app)
+        for cls in (self.vf.ui.CheckRow, self.vf.ui.RadioRow):
+            var = tk.StringVar(value="")
+            calls = []
+            row = cls(self.app, "invented choice", var, value="chosen",
+                      command=lambda: calls.append(True))
+            row.pack()
+            self.app.update()
+            for target in (row, row._canvas, row._label):
+                target.event_generate("<Button-1>", x=5, y=5)
+                self.assertEqual(var.get(), "")
+                self.assertEqual(calls, [])
+                target.event_generate("<ButtonRelease-1>", x=-100, y=-100)
+                self.assertEqual(var.get(), "")
+                self.assertEqual(calls, [])
+                target.event_generate("<Button-1>", x=5, y=5)
+                target.event_generate("<ButtonRelease-1>", x=5, y=5)
+                self.assertTrue(var.get())
+                self.assertEqual(calls, [True])
+                var.set("")
+                calls.clear()
+            row.destroy()
+
     def test_pending_interview_answer_survives_back_without_committing(self):
         wizard = self.vf.start_wizard(self.app, self.plan())
         wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
