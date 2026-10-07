@@ -775,3 +775,113 @@ class SettingsDialogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class ScrollAndComboBehaviorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(test_mode=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    def test_wheel_over_combobox_scrolls_sheet_and_keeps_value(self):
+        """Native wheel-over-combobox cycled the value and rebuilt wizard
+        pages mid-scroll ('screen goes blank'). The class binding must scroll
+        the sheet instead and leave the selection alone."""
+        import tkinter as tk
+        import folio_ui as ui
+        self.app.clear()
+        sheet = ui.ScrollFrame(self.app)
+        sheet.pack(fill="both", expand=True)
+        var = tk.StringVar(value="Alpha")
+        cb = ui.option_combo(sheet.inner, var, ["Alpha", "Beta", "Gamma"])
+        cb.pack(anchor="w")
+        for i in range(80):
+            tk.Label(sheet.inner, text=f"filler {i}", bg=ui.PAPER, fg=ui.INK).pack()
+        self.app.update_idletasks()
+        cb.event_generate("<Button-5>", x=4, y=4)
+        self.app.update_idletasks()
+        self.assertEqual(var.get(), "Alpha", "wheel cycled the combobox value")
+        self.assertGreater(sheet.canvas.yview()[0], 0, "sheet did not scroll")
+        cb.event_generate("<Button-4>", x=4, y=4)
+        self.app.update_idletasks()
+        self.assertEqual(var.get(), "Alpha")
+
+    def test_option_combo_opens_on_click_anywhere(self):
+        """Wide questionnaire dropdowns looked broken: only the far-right
+        arrow opened them. A click in the text area must post the list."""
+        import tkinter as tk
+        import folio_ui as ui
+        self.app.clear()
+        var = tk.StringVar(value="")
+        cb = ui.option_combo(self.app, var, ["One", "Two"], editable=True)
+        cb.pack()
+        self.app.update_idletasks()
+        cb.event_generate("<Button-1>", x=4, y=4)
+        self.app.update_idletasks()
+        self.assertTrue(cb.tk.call("winfo", "exists", cb._w + ".popdown"),
+                        "dropdown did not post on click")
+        cb.tk.call("ttk::combobox::Unpost", cb._w)
+
+    def test_editable_combo_allows_free_text(self):
+        """Backup-status style fields: presets are suggestions, typing a
+        custom value must work (state normal, not readonly)."""
+        import tkinter as tk
+        import folio_ui as ui
+        var = tk.StringVar(value="")
+        cb = ui.option_combo(self.app, var, ["Preset A"], editable=True)
+        cb.pack()
+        self.assertEqual(str(cb.cget("state")), "normal")
+        cb.insert(0, "my own words")
+        self.assertEqual(var.get(), "my own words")
+        cb.destroy()
+
+    def test_small_upward_wheel_at_list_top_does_not_move_down(self):
+        """Regression: a truncation fallback turned mac-style small upward
+        trackpad scrolls into +1 (downward) movement at the top of a list
+        with no sheet beneath it (PR #33 review finding, folio_ui roll())."""
+        import tkinter as tk
+        self.app.clear()
+        lb = tk.Listbox(self.app, height=6)
+        for i in range(100):
+            lb.insert("end", f"item {i}")
+        lb.pack()
+        self.app.update_idletasks()
+        self.assertEqual(lb.yview()[0], 0.0)
+        for _ in range(5):
+            lb.event_generate("<MouseWheel>", delta=1, x=5, y=5)  # small upward
+            self.app.update_idletasks()
+        self.assertEqual(lb.yview()[0], 0.0,
+                         "upward scroll at the top moved the list DOWN")
+
+    def test_zero_delta_wheel_is_consumed_without_moving(self):
+        import tkinter as tk
+        self.app.clear()
+        lb = tk.Listbox(self.app, height=6)
+        for i in range(100):
+            lb.insert("end", f"item {i}")
+        lb.pack()
+        lb.yview_moveto(0.5)
+        self.app.update_idletasks()
+        before = lb.yview()
+        lb.event_generate("<MouseWheel>", delta=0, x=5, y=5)
+        self.app.update_idletasks()
+        self.assertEqual(lb.yview(), before, "zero-delta event moved the list")
+
+    def test_small_downward_wheel_still_scrolls_list(self):
+        import tkinter as tk
+        self.app.clear()
+        lb = tk.Listbox(self.app, height=6)
+        for i in range(100):
+            lb.insert("end", f"item {i}")
+        lb.pack()
+        self.app.update_idletasks()
+        for _ in range(3):
+            lb.event_generate("<MouseWheel>", delta=-1, x=5, y=5)  # small downward
+            self.app.update_idletasks()
+        self.assertGreater(lb.yview()[0], 0.0, "downward scroll no longer works")

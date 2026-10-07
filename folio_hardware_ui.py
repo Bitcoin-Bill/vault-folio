@@ -24,10 +24,13 @@ def hardware_job(app, operation, on_success, environment_safe, key_labels=None):
     window.title("Offline hardware operation")
     window.transient(app)
     window.grab_set()
+    window.configure(bg=ui.WHITE)
     tk.Label(window, text="Keep this machine offline. Connect only the requested key.\n"
-             "Touch it when it flashes. Allow up to 40 seconds.", padx=24, pady=20).pack()
+             "Touch it when it flashes. Allow up to 40 seconds.", padx=24, pady=20,
+             bg=ui.WHITE, fg=ui.INK, font=ui.F_BODY).pack()
     status = tk.StringVar(value="Checking environment…")
-    tk.Label(window, textvariable=status, padx=20, pady=10).pack()
+    tk.Label(window, textvariable=status, padx=20, pady=10,
+             bg=ui.WHITE, fg=ui.INK).pack()
     def cancel():
         cancelled.set()
         status.set("Cancelling; waiting for the device operation to finish…")
@@ -137,7 +140,7 @@ def add_export_controls(parent, app, plan, environment_safe):
                      "The app never overwrites device settings.",wraplength=560,justify="left",
                      font=ui.F_SMALL, fg=ui.BODY_TEXT, bg=ui.WHITE).pack(anchor="w",padx=12,pady=6)
             row["slot"] = tk.StringVar(value="2")
-            ttk.Combobox(box,textvariable=row["slot"],values=["1","2"],state="readonly").pack(anchor="w",padx=12)
+            ui.option_combo(box,row["slot"],["1","2"]).pack(anchor="w",padx=12)
         else:
             tk.Label(box,text="Enter 3–5 custom questions. All answers in this set are required.\n"
                      "Avoid public facts: answers are another password and can be guessed offline.\n"
@@ -163,11 +166,11 @@ def add_export_controls(parent, app, plan, environment_safe):
         dialog.grab_set()
         dialog.configure(bg=ui.WHITE)
         tk.Label(dialog, text="This passphrase opens the guide. It is not a bitcoin seed passphrase.",
-                 font=ui.F_BODY, bg=ui.WHITE, wraplength=460, justify="left").pack(anchor="w", padx=22, pady=(18, 8))
+                 font=ui.F_BODY, bg=ui.WHITE, fg=ui.INK, wraplength=460, justify="left").pack(anchor="w", padx=22, pady=(18, 8))
         show = tk.BooleanVar(value=False)
         def secret_field(label):
-            tk.Label(dialog, text=label, font=ui.F_SMALL, bg=ui.WHITE).pack(anchor="w", padx=22)
-            entry = tk.Entry(dialog, show="*", font=ui.F_BODY, width=36)
+            tk.Label(dialog, text=label, font=ui.F_SMALL, bg=ui.WHITE, fg=ui.INK).pack(anchor="w", padx=22)
+            entry = ui.text_entry(dialog, secret=True, font=ui.F_BODY, width=36)
             entry.pack(anchor="w", padx=22, pady=(0, 10), ipady=4)
             return entry
         first = secret_field("Passphrase, at least 12 characters")
@@ -196,6 +199,7 @@ def add_export_controls(parent, app, plan, environment_safe):
         ui.btn_primary(dialog, "USE THIS PASSPHRASE", accept, side="left", padx=22, pady=(0, 18))
         ui.btn_secondary(dialog, "CANCEL", cancel, side="left", padx=8, pady=(0, 18))
         dialog.protocol("WM_DELETE_WINDOW", cancel)
+        dialog.minsize(520, 320)  # resizable by default; give it a useful floor
         first.focus_set()
 
     def export():
@@ -272,10 +276,11 @@ def add_export_controls(parent, app, plan, environment_safe):
 
 def choose_method(app,env):
     dialog=tk.Toplevel(app);dialog.title("How would you like to unlock this guide?");dialog.transient(app);dialog.grab_set()
-    tk.Label(dialog,text="Choose any ONE method. You do not need the others.",padx=20,pady=12).pack()
+    dialog.configure(bg=ui.WHITE)
+    tk.Label(dialog,text="Choose any ONE method. You do not need the others.",padx=20,pady=12,bg=ui.WHITE,fg=ui.INK,font=ui.F_BODY).pack()
     labels=[f"{i+1}. {item['meta']['label']} ({item['meta']['kind']})" for i,item in enumerate(env['methods'])]
     selected=tk.StringVar(value=labels[0])
-    ttk.Combobox(dialog,textvariable=selected,values=labels,state="readonly",width=65).pack(padx=20,pady=10)
+    ui.option_combo(dialog,selected,labels,width=65).pack(padx=20,pady=10)
     result=[None]
     def accept():result[0]=labels.index(selected.get());dialog.destroy()
     ttk.Button(dialog,text="Continue",command=accept).pack(pady=10)

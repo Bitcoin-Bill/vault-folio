@@ -344,9 +344,12 @@ def open_settings(app):
     scale.pack(side="left", padx=6)
     tk.Label(scale_row, text="2.4", font=ui.F_SMALL, bg=ui.PAPER, fg=ui.HINT).pack(side="left")
     ttk.Button(pad, text="Close", command=dialog.destroy).pack(anchor="e", pady=(14, 0))
-    width = min(720, dialog.winfo_screenwidth() - 60)
-    height = min(660, dialog.winfo_screenheight() - 80)
+    width = min(880, dialog.winfo_screenwidth() - 40)
+    height = min(760, dialog.winfo_screenheight() - 60)
     ui.center_window(dialog, app, width, height)
+    # Start roomy and stay resizable: the owner asked for a dialog that
+    # expands easily instead of a small fixed card to scroll inside.
+    dialog.minsize(560, 480)
     return dialog
 
 

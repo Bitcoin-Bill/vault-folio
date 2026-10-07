@@ -4,6 +4,7 @@ Centralizes the palette, fonts, ttk styling and the three canonical button
 styles so every screen looks and behaves the same. Importing this module has
 no side effects until init_style() is called with a live Tk root.
 """
+import platform
 import tkinter as tk
 import folio_theme as _theme
 from tkinter import ttk
@@ -22,6 +23,21 @@ F_SMALL = ("Helvetica", 12)
 F_MONO = ("Courier", 13)
 F_MONO_B = ("Courier", 13, "bold")
 F_BADGE = ("Courier", 11, "bold")
+
+_DARWIN = platform.system() == "Darwin"
+
+
+def mousewheel_pixels(delta):
+    """Convert a <MouseWheel> delta to signed scroll pixels.
+
+    Windows sends ±120 per wheel notch (one notch = 48px here). macOS trackpads
+    send a stream of tiny deltas — scrolling 48px per micro-event was the
+    'two-finger scroll flies' bug — so on Darwin each delta unit is a few
+    pixels and a fast flick naturally covers more ground.
+    """
+    if _DARWIN:
+        return -delta * 12
+    return -delta * 48 / 120
 
 
 def install_scrolling(root):
@@ -45,24 +61,71 @@ def install_scrolling(root):
     # viewport fractions unless yscrollincrement is set, so without this a
     # single notch jumped a large, font-dependent share of the page.
     notch_px = 48
+    remainders = {}  # canvas -> fractional pixels not yet applied
 
-    def roll(event, direction):
+    def scroll_sheet(sheet, pixels):
+        whole = int(pixels)
+        if whole:
+            sheet.canvas.yview_scroll(whole, "units")
+
+    def roll(event, direction=None):
         inner, sheet = targets(event.widget)
+        # direction=None: scale from the event delta (MouseWheel); an explicit
+        # ±1 (X11 Button-4/5, one notch per event) scrolls a full notch.
+        if direction is None:
+            pixels = mousewheel_pixels(event.delta)
+            key = getattr(sheet, "canvas", None)
+            if key is not None:
+                pixels += remainders.get(key, 0.0)
+                whole = int(pixels)
+                remainders[key] = pixels - whole
+                pixels = whole
+        else:
+            pixels = direction * notch_px
         if inner is not None:
             first, last = map(float, inner.yview())
-            can_scroll_inner = (direction < 0 and first > 0) or (direction > 0 and last < 1)
+            can_scroll_inner = (pixels < 0 and first > 0) or (pixels > 0 and last < 1)
             if can_scroll_inner:
-                inner.yview_scroll(direction * 3, "units")  # three lines per notch
+                if direction is None:
+                    inner.yview_scroll(int(pixels / 16) or (1 if pixels > 0 else -1), "units")
+                else:
+                    inner.yview_scroll(direction * 3, "units")  # three lines per notch
             elif sheet is not None:
-                sheet.canvas.yview_scroll(direction * notch_px, "units")
-            else:
-                inner.yview_scroll(direction * 3, "units")
+                scroll_sheet(sheet, pixels)
+            # At a boundary with no sheet beneath, consume the event without
+            # moving. A truncation fallback here (int(pixels/16) or 1) once
+            # turned small upward trackpad scrolls into +1 — downward —
+            # movement at the top of the heir navigation list. Zero-delta
+            # events land here too and must likewise do nothing.
         elif sheet is not None:
-            sheet.canvas.yview_scroll(direction * notch_px, "units")
+            scroll_sheet(sheet, pixels)
         if inner is not None or sheet is not None:
             return "break"
 
-    root.bind_all("<MouseWheel>", lambda event: roll(event, -1 if event.delta > 0 else 1))
+    def combo_roll(event, direction=None):
+        """Wheel over a combobox must scroll the SHEET, never cycle the value.
+
+        Native ttk behavior (macOS especially) treats wheel-over-combobox as
+        value selection; on wizard pages that fired <<ComboboxSelected>> and
+        rebuilt the whole screen — the 'page goes blank while scrolling' bug.
+        Class-level binding replaces the native one and breaks the tag chain
+        so the bind_all handler below does not scroll twice.
+        """
+        _inner, sheet = targets(event.widget)
+        if sheet is not None:
+            pixels = mousewheel_pixels(event.delta) if direction is None else direction * notch_px
+            key = sheet.canvas
+            pixels += remainders.get(key, 0.0)
+            whole = int(pixels)
+            remainders[key] = pixels - whole
+            scroll_sheet(sheet, whole)
+        return "break"
+
+    for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+        root.bind_class("TCombobox", sequence,
+                        lambda e, s=sequence: combo_roll(e) if s == "<MouseWheel>"
+                        else combo_roll(e, -1 if s == "<Button-4>" else 1))
+    root.bind_all("<MouseWheel>", lambda event: roll(event))
     root.bind_all("<Button-4>", lambda event: roll(event, -1))
     root.bind_all("<Button-5>", lambda event: roll(event, 1))
 
@@ -91,6 +154,50 @@ class ScrollFrame(tk.Frame):
     def scroll_to_top(self):
         """Start at the beginning when a sheet's contents are replaced."""
         self.after_idle(lambda: self.canvas.yview_moveto(0))
+
+
+def text_entry(parent, secret=False, **kw):
+    """Single-line field with explicit theme colors — never system defaults.
+
+    Raw tk.Entry widgets pick up the OS appearance: on a dark-mode Mac they
+    render as dark slabs inside light dialogs, and unthemed labels can go
+    white-on-white. Every color here is a palette role color, so theme
+    switches repaint the field like the rest of the app. Callers may still
+    override any option via kw (font, width, textvariable, ...).
+    """
+    kw.setdefault("show", "*" if secret else "")
+    kw.setdefault("bg", WHITE)
+    kw.setdefault("fg", INK)
+    kw.setdefault("insertbackground", INK)
+    kw.setdefault("highlightthickness", 1)
+    kw.setdefault("highlightbackground", LINE)
+    kw.setdefault("highlightcolor", INK)
+    kw.setdefault("relief", "solid")
+    kw.setdefault("bd", 1)
+    return tk.Entry(parent, **kw)
+
+
+def option_combo(parent, textvariable, values, editable=False, **kw):
+    """Dropdown whose list opens on a click anywhere, not only the arrow.
+
+    Questionnaire option boxes stretch the full card width, so the arrow sat
+    far right and clicking the text area did nothing — the field looked
+    broken. editable=True keeps the presets as suggestions while allowing
+    free text (every list already ends with a custom-ish value, but typing
+    should never be blocked). Wheel handling is neutralized in
+    install_scrolling() so scrolling the page never cycles the value.
+    """
+    cb = ttk.Combobox(parent, textvariable=textvariable, values=values,
+                      state=("normal" if editable else "readonly"), **kw)
+
+    def post(_event):
+        try:
+            cb.tk.call("ttk::combobox::Post", cb._w)
+        except tk.TclError:
+            pass
+
+    cb.bind("<Button-1>", post, add="+")
+    return cb
 
 
 def init_style(root):
