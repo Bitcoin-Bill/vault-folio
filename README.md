@@ -158,6 +158,7 @@ python3 vault-folio.py --self-test   # verify crypto + logic on your machine
 python3 vault-folio.py               # normal mode: offline + nonpersistent live Linux checks
 python3 vault-folio.py --test-session # UI + encrypted save/open; invented data only
 # --test-only-synthetic-questionnaire is an alias for --test-session
+python3 vault-folio.py --ubuntu-test   # installed-Ubuntu trial, air-gap lock skipped
 python3 -B -m unittest discover -s tests -v  # hardware-free regression tests
 node tests/browser_crypto.cjs        # optional browser/Python compatibility test
 ```
@@ -167,6 +168,13 @@ node tests/browser_crypto.cjs        # optional browser/Python compatibility tes
 - Other OSes may run source/crypto tests but cannot pass the new RAM-session gate.
 - From the repository directory, `sh test-folio.sh` launches the same synthetic
   test session. It bypasses environment checks and is not a real-plan shortcut.
+- `--ubuntu-test` (or `sh START-UBUNTU-TEST.sh`) runs the full app on an
+  installed Ubuntu system with the air-gap lock skipped: an UBUNTU TEST banner
+  replaces the lock screen, and the editor and encrypted save work normally.
+  The machine can still be online, so use invented data only. For the real
+  gate trial, boot a nonpersistent live USB and run plain
+  `python3 vault-folio.py`; wireless hardware present in the machine blocks
+  the launch by design.
 
 For maximum hygiene, boot a live Linux USB (no persistence) on a machine with
 wireless physically removed and run the app and its companion modules from there — this avoids intentional persistent plaintext writes; memory erasure is not guaranteed. See [docs/OPERATIONAL-SECURITY.md](docs/OPERATIONAL-SECURITY.md).
