@@ -64,6 +64,42 @@ would be separate work. Hardware/live-image acceptance testing is outstanding
 for this preview. Automated checks simulate supported/unsupported mount states;
 they do not certify any live distribution.
 
+## When the gate blocks launch
+
+The startup gate lists one row per check — PASS, FAIL or BLOCKED. Read the
+failing row first; it identifies the failed check or unavailable information. The five checks are: no default
+route, no active network interface, no Wi-Fi hardware, no Bluetooth hardware,
+and the RAM-session row (swap disabled, process dump protection active, and
+root, home, temp, `/var/tmp`, `/var/log` and configured XDG paths verifiably
+RAM-backed).
+
+Common causes, in rough order of likelihood:
+
+1. **Installed Ubuntu (or any installed OS).** A disk-backed home folder and
+   active swap can never pass the RAM-session row, no matter how much network
+   hardware is removed. This is the policy working, not a fault. To try the
+   interface on an installed Ubuntu system, launch with
+   `python3 vault-folio.py --ubuntu-test` (or `sh START-UBUNTU-TEST.sh`), which
+   skips the lock behind an UBUNTU TEST banner; use invented data only. The
+   real workflow requires the nonpersistent live session described above.
+2. **Swap auto-activated by the live session.** Live images may enable a swap
+   partition found on the machine's internal disk. Run `sudo swapoff -a`
+   before launching, then CHECK AGAIN.
+3. **Bluetooth survived the Wi-Fi card.** Bluetooth is often a separate
+   function on the same combo card or on the motherboard; the gate checks
+   `/sys/class/bluetooth`. Remove the adapter or disable it in firmware setup.
+4. **A default route outlived the hardware.** Routes can remain after a card
+   is removed. The gate screen's TURN NETWORKING OFF AND CHECK button asks the
+   OS to drop networking and attempts to delete any remaining default route,
+   then re-checks. The request may fail; read the result and gate rows.
+5. **A wired Ethernet interface.** An active cable-connected NIC fails the
+   interface and route rows; unplug it.
+6. **A check the OS cannot answer.** Missing tools or unreadable system files
+   cause the gate to fail closed (the row may show FAIL rather than BLOCKED);
+   they never pass silently. Verify the live image provides the required
+   tools, including `findmnt`, and exposes the relevant system files. A live
+   image alone does not guarantee that every check will pass.
+
 ## Temporary questionnaire demo mode
 
 The air-gap transfer bundle includes a synthetic test mode. It skips all

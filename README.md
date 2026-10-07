@@ -143,7 +143,9 @@ The app fails closed unless writable system/home/temp paths are RAM-backed,
 swap is disabled, process dump protection is active, and offline checks pass.
 Normal installed macOS/Windows sessions cannot pass this policy. This is a
 change from the earlier cross-platform runtime policy, not a claim that Python
-can securely erase all RAM. Read [RAM-SESSION.md](docs/RAM-SESSION.md).
+can securely erase all RAM. Read [RAM-SESSION.md](docs/RAM-SESSION.md); its
+troubleshooting section explains what to do when the gate blocks a session
+you expected to pass.
 
 There is a **Clear session** action. Only chosen encrypted files are persisted;
 reopen them in the app for later viewing. Power off after use: no sleep or
