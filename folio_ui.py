@@ -41,25 +41,30 @@ def install_scrolling(root):
             widget = getattr(widget, "master", None)
         return inner, sheet
 
+    # Pixels per wheel notch for sheet canvases. Canvas scroll "units" are
+    # viewport fractions unless yscrollincrement is set, so without this a
+    # single notch jumped a large, font-dependent share of the page.
+    notch_px = 48
+
     def roll(event, direction):
         inner, sheet = targets(event.widget)
         if inner is not None:
             first, last = map(float, inner.yview())
             can_scroll_inner = (direction < 0 and first > 0) or (direction > 0 and last < 1)
             if can_scroll_inner:
-                inner.yview_scroll(direction, "units")
+                inner.yview_scroll(direction * 3, "units")  # three lines per notch
             elif sheet is not None:
-                sheet.canvas.yview_scroll(direction, "units")
+                sheet.canvas.yview_scroll(direction * notch_px, "units")
             else:
-                inner.yview_scroll(direction, "units")
+                inner.yview_scroll(direction * 3, "units")
         elif sheet is not None:
-            sheet.canvas.yview_scroll(direction, "units")
+            sheet.canvas.yview_scroll(direction * notch_px, "units")
         if inner is not None or sheet is not None:
             return "break"
 
     root.bind_all("<MouseWheel>", lambda event: roll(event, -1 if event.delta > 0 else 1))
-    root.bind_all("<Button-4>", lambda event: roll(event, -3))
-    root.bind_all("<Button-5>", lambda event: roll(event, 3))
+    root.bind_all("<Button-4>", lambda event: roll(event, -1))
+    root.bind_all("<Button-5>", lambda event: roll(event, 1))
 
 
 class ScrollFrame(tk.Frame):
@@ -67,7 +72,9 @@ class ScrollFrame(tk.Frame):
 
     def __init__(self, parent, **kw):
         super().__init__(parent, **kw)
-        self.canvas = tk.Canvas(self, bg=PAPER, highlightthickness=0)
+        # yscrollincrement=1 makes canvas scroll "units" mean single pixels,
+        # so wheel notches move a fixed pixel distance on every platform.
+        self.canvas = tk.Canvas(self, bg=PAPER, highlightthickness=0, yscrollincrement=1)
         self.inner = tk.Frame(self.canvas, bg=PAPER)
         self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vsb.set)
@@ -443,42 +450,43 @@ def set_button_style(name):
     return _button_style
 
 
-def btn_primary(parent, text, command, padx=14, pady=8, **pack_kw):
+def btn_primary(parent, text, command, ipadx=14, ipady=8, **pack_kw):
+    """ipadx/ipady pad the button itself; padx/pady in pack_kw space it in the layout."""
     if _button_style == "classic":
         b = tk.Button(parent, text=text, font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-                      padx=padx, pady=pady, cursor="hand2", activebackground=INK_SOFT,
+                      padx=ipadx, pady=ipady, cursor="hand2", activebackground=INK_SOFT,
                       activeforeground=PAPER, command=command)
     else:
         b = FlatButton(parent, text=text, command=command, font=F_MONO_B,
-                       bg="ink", fg="paper", border="ink", padx=padx, pady=pady)
+                       bg="ink", fg="paper", border="ink", padx=ipadx, pady=ipady)
     if pack_kw:
         b.pack(**pack_kw)
     return b
 
 
-def btn_secondary(parent, text, command, padx=12, pady=6, **pack_kw):
+def btn_secondary(parent, text, command, ipadx=12, ipady=6, **pack_kw):
     if _button_style == "classic":
         b = tk.Button(parent, text=text, font=F_MONO, bg=PAPER, fg=INK, relief="solid", bd=1,
-                      highlightthickness=0, padx=padx, pady=pady, cursor="hand2",
+                      highlightthickness=0, padx=ipadx, pady=ipady, cursor="hand2",
                       activebackground=PAPER2, activeforeground=INK, command=command)
     else:
         b = FlatButton(parent, text=text, command=command, font=F_MONO,
-                       bg="paper", fg="ink", border="ink", padx=padx, pady=pady)
+                       bg="paper", fg="ink", border="ink", padx=ipadx, pady=ipady)
     if pack_kw:
         b.pack(**pack_kw)
     return b
 
 
-def btn_danger(parent, text, command, bg="card", font=None, padx=8, pady=4, **pack_kw):
+def btn_danger(parent, text, command, bg="card", font=None, ipadx=8, ipady=4, **pack_kw):
     font = font or _theme.F("Courier", 8)
     if _button_style == "classic":
         b = tk.Button(parent, text=text, font=font, bg=FlatButton._color(bg), fg=FLAG,
-                      relief="flat", padx=padx, pady=pady, cursor="hand2",
+                      relief="flat", padx=ipadx, pady=ipady, cursor="hand2",
                       activebackground=TEST_BG, activeforeground=FLAG, command=command)
     else:
         b = FlatButton(parent, text=text, command=command, font=font,
                        bg=bg, fg="flag", hover_bg="testbg", hover_fg="flag",
-                       border=None, padx=padx, pady=pady)
+                       border=None, padx=ipadx, pady=ipady)
     if pack_kw:
         b.pack(**pack_kw)
     return b

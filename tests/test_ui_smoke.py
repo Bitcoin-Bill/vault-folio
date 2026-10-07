@@ -537,5 +537,129 @@ class ScreenConstructionTests(unittest.TestCase):
             themes.set_scaling(self.app, 1.0)
 
 
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class UbuntuTestModeExportTests(unittest.TestCase):
+    """page_export only takes its real branch outside synthetic test mode, so
+    the shared test app (test_mode=True) never exercised it: a button-factory
+    contract bug crashed the page below the unlock-methods card and hid SAVE.
+    Render it in ubuntu-test mode, which takes the real branch."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(ubuntu_test=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    def _export_page(self):
+        wizard = self.vf.start_wizard(self.app, self.vf.blank_plan())
+        wizard.goto(len(self.vf.STEP_DEFS) - 1)  # "export" is the last step
+        self.app.update_idletasks()
+        return wizard
+
+    @staticmethod
+    def _flat_buttons(widget):
+        found = []
+        for child in widget.winfo_children():
+            if isinstance(child, UbuntuTestModeExportTests.vf.ui.FlatButton):
+                found.append(child)
+            found.extend(UbuntuTestModeExportTests._flat_buttons(child))
+        return found
+
+    def test_export_page_renders_unlock_and_save_controls(self):
+        self._export_page()
+        texts = {b.cget("text") for b in self._flat_buttons(self.app)}
+        self.assertIn("ADD PASSPHRASE", texts)
+        self.assertIn("SAVE ENCRYPTED GUIDE", texts)
+
+    def test_passphrase_dialog_opens(self):
+        """Same contract bug crashed the enrollment dialog (pady tuple)."""
+        self._export_page()
+        add = next(b for b in self._flat_buttons(self.app)
+                   if b.cget("text") == "ADD PASSPHRASE")
+        before = set(self.app.winfo_children())
+        add.invoke()
+        self.app.update_idletasks()
+        dialogs = [w for w in self.app.winfo_children() if w not in before]
+        self.assertEqual(len(dialogs), 1, "passphrase dialog did not open")
+        texts = {b.cget("text") for b in self._flat_buttons(dialogs[0])}
+        self.assertIn("USE THIS PASSPHRASE", texts)
+        dialogs[0].destroy()
+        self.app.update_idletasks()
+
+
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class WheelScrollTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(test_mode=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    def test_wheel_notch_scrolls_sheet_by_fixed_pixels(self):
+        """Canvas scroll units default to viewport fractions; with
+        yscrollincrement=1 one notch must move a small fixed pixel count."""
+        import tkinter as tk
+        sheet = self.vf.ui.ScrollFrame(self.app)
+        sheet.pack(fill="both", expand=True)
+        filler = tk.Frame(sheet.inner, height=4000, width=200)
+        filler.pack()
+        self.app.update_idletasks()
+        filler.event_generate("<Button-5>", x=5, y=5)
+        self.app.update_idletasks()
+        top = sheet.canvas.yview()[0]
+        height = sheet.canvas.bbox("all")[3]
+        moved = top * height
+        self.assertGreater(moved, 0, "wheel notch did not scroll the sheet")
+        self.assertLessEqual(moved, 80, f"one notch moved {moved:.0f}px — viewport-fraction scrolling")
+        sheet.destroy()
+        self.app.update_idletasks()
+
+
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class SettingsDialogTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(test_mode=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    @staticmethod
+    def _walk(widget):
+        yield widget
+        for child in widget.winfo_children():
+            yield from SettingsDialogTests._walk(child)
+
+    def test_settings_dialog_scrolls_and_fits_the_screen(self):
+        dialog = self.vf.themes.open_settings(self.app)
+        self.app.update_idletasks()
+        sheets = [w for w in self._walk(dialog)
+                  if isinstance(w, self.vf.ui.ScrollFrame)]
+        self.assertTrue(sheets, "settings dialog content is not scrollable")
+        self.assertLessEqual(dialog.winfo_height(), dialog.winfo_screenheight() - 40)
+        dialog.destroy()
+        self.app.update_idletasks()
+
+    def test_seedqr_medium_option_mirrored_in_both_editions(self):
+        import folio_catalog
+        self.assertIn("Paper QR (SeedQR)", self.vf.MEDIA)        # vault key backup media
+        self.assertIn("Paper QR (SeedQR)", folio_catalog.MEDIA)  # backup record media
+        path = os.path.join(os.path.dirname(__file__), "..", "browser-edition", "index.html")
+        with open(path, encoding="utf-8") as handle:
+            html = handle.read()
+        self.assertIn("Paper QR (SeedQR)", html)
+
+
 if __name__ == "__main__":
     unittest.main()

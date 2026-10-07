@@ -90,8 +90,8 @@ GENMETHODS = ["Dice / coins / cards + offline calculator (EntropyLab)",
               "Device RNG (device-generated)", "Bitcoin Core wallet generation",
               "Imported existing seed", "Undecided"]
 MEDIA = ["Steel / metal plate", "Paper (NATO-phonetic, checksum)",
-         "Archival optical disc + printed paper", "Encrypted digital file",
-         "Hardware device only (no separate backup)"]
+         "Paper QR (SeedQR)", "Archival optical disc + printed paper",
+         "Encrypted digital file", "Hardware device only (no separate backup)"]
 PASSPHRASE = ["None — explicit record of that", "Stored at a separate site",
               "Sealed copy held by trustee", "Memory only (dangerous)", "Undecided"]
 MECHANISMS = [
@@ -1582,7 +1582,7 @@ def open_choice(app, plan):
     row = tk.Frame(dlg, bg=PAPER)
     row.pack(padx=24, pady=18, anchor="w")
     ui.btn_primary(row, "HEIR VIEW — READ & FOLLOW",
-                   lambda: (dlg.destroy(), show_heir(app, plan)), padx=12).pack(side="left", padx=(0, 8))
+                   lambda: (dlg.destroy(), show_heir(app, plan)), ipadx=12).pack(side="left", padx=(0, 8))
     ui.btn_flag(row, "EDITOR VIEW — CHANGES",
                 lambda: (dlg.destroy(), confirm_alter_saved_guide(app, plan))).pack(side="left")
     ui.btn_secondary(dlg, "CANCEL — DO NOT OPEN",
@@ -2638,7 +2638,7 @@ class Wizard:
                                       "Wallet descriptor export (BSMS / Core / Sparrow)"], width=26)
             cb.grid(row=2, column=1, sticky="ew", padx=8)
             cb.bind("<<ComboboxSelected>>", lambda *_: (d.__setitem__("format", v2.get()), self.mark_dirty()))
-            ui.btn_danger(fr, "✕", bg="card", font=themes.F("Courier", 9), padx=6, pady=2,
+            ui.btn_danger(fr, "✕", bg="card", font=themes.F("Courier", 9), ipadx=6, ipady=2,
                           command=lambda i=i: (self.plan["backups"]["descriptorLocations"].pop(i),
                                                self.mark_dirty(), self.draw_dlocs())).grid(row=2, column=2, padx=8)
             fr.columnconfigure(0, weight=3)

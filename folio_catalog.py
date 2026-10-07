@@ -20,7 +20,7 @@ PROFILES = [
 ]
 BACKUP_SCHEMES = ["BIP39 seed backup", "BIP39 + separately held passphrase", "SLIP39 single share", "SLIP39 threshold shares (one signing key)", "Seed XOR (all parts required; one signing key)", "Encrypted device backup", "Electrum seed format", "Bitcoin Core wallet backup", "Descriptor / BSMS / wallet configuration", "Package YubiKey", "Other / custom"]
 SIGNERS = ["COLDCARD Q / Mk4", "Trezor", "Ledger", "BitBox02", "Foundation Passport", "Keystone", "Jade", "SeedSigner", "Krux", "Specter DIY", "TAPSIGNER", "Air-gapped Bitcoin Core", "Other / custom"]
-MEDIA = ["Steel / metal", "Paper", "MicroSD", "USB drive", "Archival optical disc", "Hardware device", "Sealed legal packet", "Other / custom"]
+MEDIA = ["Steel / metal", "Paper", "Paper QR (SeedQR)", "MicroSD", "USB drive", "Archival optical disc", "Hardware device", "Sealed legal packet", "Other / custom"]
 FIELDS = {
     "lawyers": [
         ("name", "Lawyer / firm / trusted contact", None),
