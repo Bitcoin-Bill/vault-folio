@@ -198,3 +198,67 @@ class ThemeApplyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThemedEntryTests(unittest.TestCase):
+    """Raw tk.Entry widgets pick up the OS appearance — on a dark-mode Mac
+    they rendered as dark slabs inside light dialogs, with unthemed labels
+    going white-on-white. All single-line fields must go through
+    ui.text_entry() so colors are explicit palette roles."""
+
+    SOURCE_FILES = ("vault-folio.py", "folio_beneficiary.py", "folio_catalog.py",
+                    "folio_document.py", "folio_hardware_ui.py", "folio_memory.py",
+                    "folio_security.py", "folio_storage.py", "folio_synthetic.py",
+                    "folio_theme.py")
+
+    def test_no_raw_tk_entry_outside_ui_helper(self):
+        import os
+        import re
+        repo = os.path.join(os.path.dirname(__file__), "..")
+        raw = re.compile(r"(?<!t)tk\.Entry\(")  # ttk.Entry is styled in init_style
+        for name in self.SOURCE_FILES:
+            path = os.path.join(repo, name)
+            if not os.path.exists(path):
+                continue
+            with open(path) as fh:
+                for lineno, line in enumerate(fh, 1):
+                    self.assertIsNone(raw.search(line),
+                                      f"{name}:{lineno} creates a raw tk.Entry; "
+                                      "use ui.text_entry() so colors stay themed")
+
+    @needs_display
+    def test_text_entry_carries_explicit_palette_colors(self):
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            entry = ui.text_entry(root)
+            self.assertEqual(entry.cget("bg"), ui.WHITE)
+            self.assertEqual(entry.cget("fg"), ui.INK)
+            self.assertEqual(entry.cget("insertbackground"), ui.INK)
+            self.assertEqual(entry.cget("highlightbackground"), ui.LINE)
+            secret = ui.text_entry(root, secret=True)
+            self.assertEqual(secret.cget("show"), "*")
+        finally:
+            root.destroy()
+
+    @needs_display
+    def test_dialog_labels_carry_explicit_colors(self):
+        """Labels with a themed bg but no fg went white-on-white on macOS
+        dark mode. Every tk.Label in app sources must set fg when it sets bg."""
+        import ast
+        import os
+        repo = os.path.join(os.path.dirname(__file__), "..")
+        for name in self.SOURCE_FILES + ("folio_ui.py",):
+            path = os.path.join(repo, name)
+            if not os.path.exists(path):
+                continue
+            tree = ast.parse(open(path).read())
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "Label"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "tk"):
+                    kw = {k.arg for k in node.keywords if k.arg}
+                    self.assertFalse("bg" in kw and "fg" not in kw,
+                                     f"{name}:{node.lineno} tk.Label sets bg without fg")

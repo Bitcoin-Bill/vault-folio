@@ -24,10 +24,13 @@ def hardware_job(app, operation, on_success, environment_safe, key_labels=None):
     window.title("Offline hardware operation")
     window.transient(app)
     window.grab_set()
+    window.configure(bg=ui.WHITE)
     tk.Label(window, text="Keep this machine offline. Connect only the requested key.\n"
-             "Touch it when it flashes. Allow up to 40 seconds.", padx=24, pady=20).pack()
+             "Touch it when it flashes. Allow up to 40 seconds.", padx=24, pady=20,
+             bg=ui.WHITE, fg=ui.INK, font=ui.F_BODY).pack()
     status = tk.StringVar(value="Checking environment…")
-    tk.Label(window, textvariable=status, padx=20, pady=10).pack()
+    tk.Label(window, textvariable=status, padx=20, pady=10,
+             bg=ui.WHITE, fg=ui.INK).pack()
     def cancel():
         cancelled.set()
         status.set("Cancelling; waiting for the device operation to finish…")
@@ -163,11 +166,11 @@ def add_export_controls(parent, app, plan, environment_safe):
         dialog.grab_set()
         dialog.configure(bg=ui.WHITE)
         tk.Label(dialog, text="This passphrase opens the guide. It is not a bitcoin seed passphrase.",
-                 font=ui.F_BODY, bg=ui.WHITE, wraplength=460, justify="left").pack(anchor="w", padx=22, pady=(18, 8))
+                 font=ui.F_BODY, bg=ui.WHITE, fg=ui.INK, wraplength=460, justify="left").pack(anchor="w", padx=22, pady=(18, 8))
         show = tk.BooleanVar(value=False)
         def secret_field(label):
-            tk.Label(dialog, text=label, font=ui.F_SMALL, bg=ui.WHITE).pack(anchor="w", padx=22)
-            entry = tk.Entry(dialog, show="*", font=ui.F_BODY, width=36)
+            tk.Label(dialog, text=label, font=ui.F_SMALL, bg=ui.WHITE, fg=ui.INK).pack(anchor="w", padx=22)
+            entry = ui.text_entry(dialog, secret=True, font=ui.F_BODY, width=36)
             entry.pack(anchor="w", padx=22, pady=(0, 10), ipady=4)
             return entry
         first = secret_field("Passphrase, at least 12 characters")
@@ -272,7 +275,8 @@ def add_export_controls(parent, app, plan, environment_safe):
 
 def choose_method(app,env):
     dialog=tk.Toplevel(app);dialog.title("How would you like to unlock this guide?");dialog.transient(app);dialog.grab_set()
-    tk.Label(dialog,text="Choose any ONE method. You do not need the others.",padx=20,pady=12).pack()
+    dialog.configure(bg=ui.WHITE)
+    tk.Label(dialog,text="Choose any ONE method. You do not need the others.",padx=20,pady=12,bg=ui.WHITE,fg=ui.INK,font=ui.F_BODY).pack()
     labels=[f"{i+1}. {item['meta']['label']} ({item['meta']['kind']})" for i,item in enumerate(env['methods'])]
     selected=tk.StringVar(value=labels[0])
     ttk.Combobox(dialog,textvariable=selected,values=labels,state="readonly",width=65).pack(padx=20,pady=10)

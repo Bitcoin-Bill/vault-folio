@@ -93,6 +93,27 @@ class ScrollFrame(tk.Frame):
         self.after_idle(lambda: self.canvas.yview_moveto(0))
 
 
+def text_entry(parent, secret=False, **kw):
+    """Single-line field with explicit theme colors — never system defaults.
+
+    Raw tk.Entry widgets pick up the OS appearance: on a dark-mode Mac they
+    render as dark slabs inside light dialogs, and unthemed labels can go
+    white-on-white. Every color here is a palette role color, so theme
+    switches repaint the field like the rest of the app. Callers may still
+    override any option via kw (font, width, textvariable, ...).
+    """
+    kw.setdefault("show", "*" if secret else "")
+    kw.setdefault("bg", WHITE)
+    kw.setdefault("fg", INK)
+    kw.setdefault("insertbackground", INK)
+    kw.setdefault("highlightthickness", 1)
+    kw.setdefault("highlightbackground", LINE)
+    kw.setdefault("highlightcolor", INK)
+    kw.setdefault("relief", "solid")
+    kw.setdefault("bd", 1)
+    return tk.Entry(parent, **kw)
+
+
 def init_style(root):
     """One-time ttk theme setup; call after the root window exists."""
     style = ttk.Style(root)

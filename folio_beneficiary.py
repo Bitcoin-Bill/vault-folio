@@ -364,7 +364,7 @@ def show_beneficiary(app, plan, close, full_reference, draw_diagrams=None, save_
 
     tk.Label(outer, text='Your family’s recovery guide', font=ui.F('Georgia', 24), bg=ui.PAPER, fg=ui.INK).pack(anchor='w')
     tk.Label(outer, text='One step at a time. Nothing here changes the sealed file until you press SAVE NOTES.',
-             bg=ui.PAPER).pack(anchor='w', pady=(4,16))
+             bg=ui.PAPER, fg=ui.BODY_TEXT).pack(anchor='w', pady=(4,16))
     body = tk.Frame(outer, bg=ui.PAPER); body.pack(fill='both', expand=True)
     nav = tk.Frame(body, bg=ui.PAPER2, width=360)
     nav.pack(side='left', fill='y', padx=(0,18))

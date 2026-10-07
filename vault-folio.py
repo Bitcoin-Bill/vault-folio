@@ -1887,7 +1887,7 @@ class Wizard:
         self._label(parent, label, hint)
         v = tk.StringVar(value=str(getp(self.plan, path) or ""))
         self.vars[path] = v  # keep the Tcl variable alive: a locked field attaches no trace, so without this the StringVar is garbage-collected and the entry shows blank
-        e = tk.Entry(parent, textvariable=v, font=F_BODY, bg=WHITE, fg=INK, relief="solid", bd=1)
+        e = ui.text_entry(parent, textvariable=v, font=F_BODY)
         ui.focusable(e)
         e.pack(fill="x", ipady=3)
         if not self.lock_saved(e, path):
@@ -2081,7 +2081,7 @@ class Wizard:
                 else:
                     v = tk.StringVar(value=h.get(key, ""))
                     v.trace_add("write", lambda *_: (h.__setitem__(key, v.get()), self.mark_dirty()))
-                    tk.Entry(inner, textvariable=v, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+                    ui.text_entry(inner, textvariable=v, font=themes.F("Helvetica", 10)).pack(fill="x")
 
             row("Name", "name")
             row("Relationship", "relation")
@@ -2290,8 +2290,7 @@ class Wizard:
                 ui.radio_row(card, label, self.intake_value, value,
                              bg="card", font=F_BODY, wraplength=620).pack(anchor="w", padx=20, pady=6)
         else:
-            answer_entry = tk.Entry(card, textvariable=self.intake_value, font=F_BODY, bg=WHITE, fg=INK,
-                                    relief="solid", bd=1)
+            answer_entry = ui.text_entry(card, textvariable=self.intake_value, font=F_BODY)
             answer_entry.pack(fill="x", padx=20, pady=(0, 8))
             answer_entry.bind("<Return>", lambda _event: (self.advance_vault_intake(), "break")[1])
             if kind == "number":
@@ -2438,7 +2437,7 @@ class Wizard:
             else:
                 var = tk.StringVar(value=str(obj.get(key, "")))
                 var.trace_add("write", lambda *_: (obj.__setitem__(key, var.get()), self.mark_dirty()))
-                tk.Entry(inner, textvariable=var, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+                ui.text_entry(inner, textvariable=var, font=themes.F("Helvetica", 10)).pack(fill="x")
 
         row("Vault name", "name")
         row("Preset source / guide revision (optional)", "profileSource")
@@ -2457,9 +2456,9 @@ class Wizard:
         vn = tk.StringVar(value=str(v.get("n", "")))
         vm.trace_add("write", lambda *_: (v.__setitem__("m", int(vm.get()) if vm.get().isdigit() else ""), self.mark_dirty()))
         vn.trace_add("write", lambda *_: (v.__setitem__("n", int(vn.get()) if vn.get().isdigit() else ""), self.mark_dirty()))
-        tk.Entry(qrow, textvariable=vm, width=8, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
-        tk.Label(qrow, text=" OF ", font=F_MONO, bg=WHITE).pack(side="left")
-        tk.Entry(qrow, textvariable=vn, width=8, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(side="left", fill="x", expand=True)
+        ui.text_entry(qrow, textvariable=vm, width=8, font=themes.F("Helvetica", 10)).pack(side="left", fill="x", expand=True)
+        tk.Label(qrow, text=" OF ", font=F_MONO, bg=WHITE, fg=INK).pack(side="left")
+        ui.text_entry(qrow, textvariable=vn, width=8, font=themes.F("Helvetica", 10)).pack(side="left", fill="x", expand=True)
         tk.Label(inner, text="2-of-3 if a normal family must operate it. 3-of-5 when losing one site must not "
                              "matter. 3-of-7 is the loss-extreme — and a poor inheritance experience.",
                  font=themes.F("Helvetica", 8), bg=WHITE, fg=HINT, anchor="w", wraplength=580,
@@ -2490,7 +2489,7 @@ class Wizard:
                      justify="left").pack(anchor="w")
             dv = tk.StringVar(value=tl.get("delay", ""))
             dv.trace_add("write", lambda *_: (tl.__setitem__("delay", dv.get()), self.mark_dirty()))
-            tk.Entry(inner, textvariable=dv, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+            ui.text_entry(inner, textvariable=dv, font=themes.F("Helvetica", 10)).pack(fill="x")
 
         row("Notes", "notes", hint="Do not mix personal, trust, and business coins under one descriptor. "
                                    "Legal ownership should match who can sign.")
@@ -2553,7 +2552,7 @@ class Wizard:
             else:
                 var = tk.StringVar(value=k.get(key, ""))
                 var.trace_add("write", lambda *_: (k.__setitem__(key, var.get()), self.mark_dirty()))
-                tk.Entry(inner, textvariable=var, font=themes.F("Helvetica", 10), relief="solid", bd=1).pack(fill="x")
+                ui.text_entry(inner, textvariable=var, font=themes.F("Helvetica", 10)).pack(fill="x")
 
         row("Label", "label", hint="e.g. Key A — home signer")
         dev_hint = ""
@@ -2628,7 +2627,7 @@ class Wizard:
                      fg=HINT).grid(row=1, column=0, sticky="w", padx=8)
             v1 = tk.StringVar(value=d.get("where", ""))
             v1.trace_add("write", lambda *_: (d.__setitem__("where", v1.get()), self.mark_dirty()))
-            tk.Entry(fr, textvariable=v1, font=themes.F("Helvetica", 10), relief="solid", bd=1).grid(row=2, column=0, sticky="ew", padx=8)
+            ui.text_entry(fr, textvariable=v1, font=themes.F("Helvetica", 10)).grid(row=2, column=0, sticky="ew", padx=8)
             tk.Label(fr, text="FORMAT", font=themes.F("Courier", 8), bg=WHITE, fg=HINT).grid(row=0, column=1, sticky="w", padx=8, pady=(6, 0))
             tk.Label(fr, text="Choose the stored copy type.", font=themes.F("Helvetica", 8), bg=WHITE,
                      fg=HINT).grid(row=1, column=1, sticky="w", padx=8)
