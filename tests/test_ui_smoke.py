@@ -104,7 +104,7 @@ class ScreenConstructionTests(unittest.TestCase):
         self.app.update_idletasks()
         boxes = []
         def find(widget):
-            if isinstance(widget, tk.Checkbutton):
+            if isinstance(widget, (tk.Checkbutton, self.vf.ui.CheckRow)):
                 boxes.append(widget)
             for child in widget.winfo_children():
                 find(child)
@@ -127,7 +127,7 @@ class ScreenConstructionTests(unittest.TestCase):
         found = {}
 
         def walk(widget):
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, (tk.Button, self.vf.ui.FlatButton)):
                 found[str(widget.cget("text"))] = widget
             for child in widget.winfo_children():
                 walk(child)
@@ -162,7 +162,7 @@ class ScreenConstructionTests(unittest.TestCase):
         buttons = {}
 
         def walk(widget):
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, (tk.Button, self.vf.ui.FlatButton)):
                 buttons[str(widget.cget("text"))] = widget
             for child in widget.winfo_children():
                 walk(child)
@@ -191,7 +191,7 @@ class ScreenConstructionTests(unittest.TestCase):
         buttons = {}
 
         def walk(widget):
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, (tk.Button, self.vf.ui.FlatButton)):
                 buttons[str(widget.cget("text"))] = widget
             for child in widget.winfo_children():
                 walk(child)
@@ -204,6 +204,113 @@ class ScreenConstructionTests(unittest.TestCase):
         self.assertIsNotNone(wizard.vault_intake)             # interview still active
         self.assertEqual(wizard.intake_value.get(), "multi")  # pending answer restored
         self.assertEqual(wizard.vault_intake["answers"], {})  # but never auto-committed
+
+    def test_intake_options_are_drawn_rows_that_set_the_answer(self):
+        """macOS Aqua renders native radiobutton labels invisibly (blank
+        options), so intake choices must be app-drawn RadioRows that still
+        drive the same StringVar."""
+        plan = self.plan()
+        wizard = self.vf.start_wizard(self.app, plan)
+        wizard.goto(next(i for i, (sid, _t) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
+        wizard.begin_vault_intake()
+        self.app.update_idletasks()
+        rows = []
+
+        def walk(widget):
+            if isinstance(widget, self.vf.ui.RadioRow):
+                rows.append(widget)
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(self.app)
+        self.assertGreaterEqual(len(rows), 3, "intake choice rows not rendered")
+        labels = [str(row.cget("text")) for row in rows]
+        self.assertTrue(any("single-signature" in label for label in labels), labels)
+        rows[1].invoke()
+        self.assertEqual(wizard.intake_value.get(), "multi")
+
+    def test_button_style_toggle_switches_button_widgets(self):
+        """Session-only button style: flat draws FlatButtons, classic uses
+        native tk.Buttons; switching rebuilds the current screen in place."""
+        import tkinter as tk
+        ui = self.vf.ui
+
+        def buttons():
+            found = []
+            def walk(widget):
+                if isinstance(widget, (tk.Button, ui.FlatButton)):
+                    found.append(widget)
+                for child in widget.winfo_children():
+                    walk(child)
+            walk(self.app)
+            return found
+
+        try:
+            self.vf.themes.set_button_style("classic", self.app)
+            self.app.update_idletasks()
+            classic = buttons()
+            self.assertTrue(classic, "no buttons rendered in classic mode")
+            self.assertFalse(any(isinstance(b, ui.FlatButton) for b in classic))
+            self.vf.themes.set_button_style("flat", self.app)
+            self.app.update_idletasks()
+            self.assertTrue(any(isinstance(b, ui.FlatButton) for b in buttons()))
+        finally:
+            ui.set_button_style("flat")
+            self.vf.home_screen(self.app)
+            self.app.update_idletasks()
+
+    def test_style_switch_preserves_uncommitted_intake(self):
+        wizard = self.vf.start_wizard(self.app, self.plan())
+        wizard.goto(next(i for i, (sid, _) in enumerate(self.vf.STEP_DEFS) if sid == "vaults"))
+        wizard.begin_vault_intake()
+        wizard.intake_value.set("multi")
+        wizard.advance_vault_intake()
+        key = wizard.vault_intake_questions()[wizard.vault_intake["index"]][0]
+        wizard.intake_value.set("unfinished invented answer")
+        try:
+            for style in ("classic", "flat"):
+                self.vf.themes.set_button_style(style, self.app)
+                self.app.update()
+                self.assertEqual(wizard.intake_value.get(), "unfinished invented answer")
+                self.assertNotIn(key, wizard.vault_intake["answers"])
+        finally:
+            self.vf.ui.set_button_style("flat")
+            self.vf.home_screen(self.app)
+
+    def test_flat_button_release_cancellation_and_keyboard(self):
+        self.vf.home_screen(self.app)
+        calls = []
+        button = self.vf.ui.FlatButton(self.app, text="REMOVE invented record",
+                                      command=lambda: calls.append(True))
+        button.pack()
+        self.app.update()
+        label = button._label
+        label.event_generate("<ButtonPress-1>", x=5, y=5)
+        self.app.update()
+        self.assertEqual(calls, [])
+        label.event_generate("<ButtonRelease-1>", x=-100, y=-100)
+        self.app.update()
+        self.assertEqual(calls, [])
+        label.event_generate("<ButtonPress-1>", x=5, y=5)
+        label.event_generate("<ButtonRelease-1>", x=5, y=5)
+        self.app.update()
+        self.assertEqual(len(calls), 1)
+        button.configure(state="disabled")
+        label.event_generate("<ButtonPress-1>", x=5, y=5)
+        label.event_generate("<ButtonRelease-1>", x=5, y=5)
+        self.assertEqual(len(calls), 1)
+        button.configure(state="normal")
+        button.focus_force()
+        self.app.update()
+        for key in ("space", "Return"):
+            before = len(calls)
+            button.event_generate("<KeyPress-" + key + ">")
+            button.event_generate("<KeyPress-" + key + ">")
+            self.assertEqual(len(calls), before)
+            button.event_generate("<KeyRelease-" + key + ">")
+            self.app.update()
+            self.assertEqual(len(calls), before + 1)
+        button.destroy()
 
     def test_pending_interview_answer_survives_back_without_committing(self):
         wizard = self.vf.start_wizard(self.app, self.plan())

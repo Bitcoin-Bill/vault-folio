@@ -1094,6 +1094,7 @@ class App(tk.Tk):
         self.guide_env = None     # original envelope (public parts)
         self.guide_dek = None     # data key from the open; lets notes re-seal losslessly
         self.saved_snapshot = None  # copy of the plan as last saved; cleared with the session
+        self.screen_rebuilder = None  # rebuilds the current screen (button style changes)
         self.ubuntu_test = ubuntu_test
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_gate()
@@ -1133,10 +1134,10 @@ class App(tk.Tk):
         bar.pack(fill="x")
         tk.Label(bar, text=f"{APP_NAME} · Cold Storage Plan & Inheritance File",
                  font=themes.F("Georgia", 12), bg=PAPER, fg=INK).pack(side="left", padx=16, pady=8)
-        tk.Button(bar, text="CLEAR SESSION", command=self.clear_session,
-                  font=themes.F("Courier", 8)).pack(side="right", padx=8)
-        tk.Button(bar, text="SETTINGS", command=lambda: themes.open_settings(self),
-                  font=themes.F("Courier", 8)).pack(side="right", padx=8)
+        ui.btn_quiet(bar, "CLEAR SESSION", self.clear_session,
+                     font=themes.F("Courier", 8)).pack(side="right", padx=8)
+        ui.btn_quiet(bar, "SETTINGS", lambda: themes.open_settings(self),
+                     font=themes.F("Courier", 8)).pack(side="right", padx=8)
         dot = "●" if ok else "●"
         tk.Label(bar, text=f"{dot}  {status}", font=themes.F("Courier", 9),
                  bg=PAPER, fg=(OK if ok else FLAG)).pack(side="right", padx=16)
@@ -1328,6 +1329,7 @@ def home_screen(app):
     app.guide_dek = None
     discard_plan(getattr(app, "saved_snapshot", None))  # CLEAR SESSION means it
     app.saved_snapshot = None
+    app.screen_rebuilder = lambda: home_screen(app)
     app.header()
     frame = ScrollFrame(app)
     frame.pack(fill="both", expand=True)
@@ -1356,10 +1358,7 @@ def home_screen(app):
         tk.Label(card, text=sentence, font=F_BODY, bg=WHITE, fg=BODY_TEXT,
                  anchor="w", justify="left", wraplength=760).pack(
             anchor="w", padx=18, pady=(0, 12))
-        tk.Button(card, text=button_text, font=F_MONO_B, relief="flat",
-                  padx=16, pady=10, cursor="hand2", bg=(INK if primary else PAPER2),
-                  fg=(PAPER if primary else INK), highlightthickness=1,
-                  highlightbackground=LINE, command=command).pack(
+        ui.btn_home_action(card, button_text, command, primary).pack(
             anchor="w", padx=18, pady=(0, 14))
 
     action(
@@ -1582,12 +1581,10 @@ def open_choice(app, plan):
              font=F_BODY, bg=PAPER, fg=BODY_TEXT, wraplength=560, justify="left").pack(padx=24, anchor="w")
     row = tk.Frame(dlg, bg=PAPER)
     row.pack(padx=24, pady=18, anchor="w")
-    tk.Button(row, text="HEIR VIEW — READ & FOLLOW", font=F_MONO_B, bg=INK, fg=PAPER, relief="flat",
-              padx=12, pady=8, cursor="hand2",
-              command=lambda: (dlg.destroy(), show_heir(app, plan))).pack(side="left", padx=(0, 8))
-    tk.Button(row, text="EDITOR VIEW — CHANGES", font=F_MONO_B, bg=PAPER, fg=FLAG, relief="flat",
-              highlightthickness=1, highlightbackground=FLAG, padx=12, pady=8, cursor="hand2",
-              command=lambda: (dlg.destroy(), confirm_alter_saved_guide(app, plan))).pack(side="left")
+    ui.btn_primary(row, "HEIR VIEW — READ & FOLLOW",
+                   lambda: (dlg.destroy(), show_heir(app, plan)), padx=12).pack(side="left", padx=(0, 8))
+    ui.btn_flag(row, "EDITOR VIEW — CHANGES",
+                lambda: (dlg.destroy(), confirm_alter_saved_guide(app, plan))).pack(side="left")
     ui.btn_secondary(dlg, "CANCEL — DO NOT OPEN",
                      lambda: (dlg.destroy(), home_screen(app))).pack(padx=24, pady=(0, 18), anchor="w")
     ui.center_window(dlg, app)
@@ -1666,6 +1663,10 @@ class Wizard:
         self.vault_intake = None
         self._build_chrome()
 
+    def rebuild_preserving_input(self):
+        self.stash_vault_intake_answer()
+        self._build_chrome()
+
     def _build_chrome(self):
         """(Re)build the editor chrome around the current state and render.
 
@@ -1674,6 +1675,7 @@ class Wizard:
         instead of starting a fresh one."""
         app = self.app
         app.clear()
+        app.screen_rebuilder = self.rebuild_preserving_input
         app.header(status="PLAN EDITOR · CHANGES ARE NOT SAVED UNTIL YOU RE-ENCRYPT")
         if getattr(app, "guide_path", None):
             tk.Label(app, text="SAVED GUIDE · Editing changes what the family will later rely on. "
@@ -1691,12 +1693,8 @@ class Wizard:
         self.sidebar.canvas.configure(width=225, bg=PAPER2)
         self.sidebar.inner.configure(bg=PAPER2)
         for i, (_, title) in enumerate(STEP_DEFS):
-            b = tk.Button(self.sidebar.inner, text=f"{i + 1:02d}  {title}", font=themes.F("Courier", 9),
-                          anchor="w", justify="left", wraplength=205,
-                          relief="flat", padx=14, pady=8, cursor="hand2", bg=PAPER2, fg=HINT,
-                          activebackground=INK, activeforeground=PAPER,
-                          command=lambda n=i: self.goto(n))
-            b.pack(fill="x")
+            ui.btn_step(self.sidebar.inner, f"{i + 1:02d}  {title}",
+                        lambda n=i: self.goto(n))
         self.step_buttons = list(self.sidebar.inner.winfo_children())
 
         right = tk.Frame(shell, bg=PAPER)
@@ -1937,9 +1935,8 @@ class Wizard:
                     lst.remove(val)
                 setp(self.plan, path, lst)
                 self.mark_dirty()
-            tk.Checkbutton(parent, text=lab, variable=v, font=themes.F("Helvetica", 10), bg=PAPER, fg=INK,
-                           activebackground=PAPER, selectcolor=WHITE, anchor="w", justify="left",
-                           wraplength=620, command=toggle).pack(anchor="w")
+            ui.check_row(parent, lab, v, command=toggle, bg="paper",
+                         font=themes.F("Helvetica", 10), wraplength=620).pack(anchor="w")
 
     # ---- page scaffolding -------------------------------------------------
     def page(self, title, intro=""):
@@ -1947,9 +1944,14 @@ class Wizard:
         for w in c.winfo_children():
             w.destroy()
         self.content.scroll_to_top()
+        flat = ui.button_style() == "flat"
         for i, b in enumerate(self.step_buttons):
-            b.configure(bg=(INK if i == self.step else PAPER2),
-                        fg=(PAPER if i == self.step else HINT))
+            if flat:
+                b.configure(bg=("ink" if i == self.step else "paper2"),
+                            fg=("paper" if i == self.step else "hint"))
+            else:
+                b.configure(bg=(INK if i == self.step else PAPER2),
+                            fg=(PAPER if i == self.step else HINT))
         self.pos_lbl.configure(text=f"SECTION {self.step + 1} OF {len(STEP_DEFS)}")
         self.back_btn.configure(text="← BACK / EXIT")
         self.next_btn.configure(text=("DONE" if self.step == len(STEP_DEFS)-1 else "CONTINUE →"))
@@ -2088,8 +2090,8 @@ class Wizard:
                 ["No", "Yes — intentional co-signer", "Yes — inheritance key, not usable yet"],
                 hint="The default answer should be No. An heir holding a live key now can be targeted or coerced.")
             row("How they are reached / found", "contact")
-            tk.Button(fr, text="REMOVE", font=themes.F("Courier", 8), bg=WHITE, fg=FLAG, relief="flat",
-                      cursor="hand2", command=lambda i=i: self.del_heir(i)).pack(anchor="e", padx=10, pady=(0, 8))
+            ui.btn_danger(fr, "REMOVE", lambda i=i: self.del_heir(i),
+                          bg="card").pack(anchor="e", padx=10, pady=(0, 8))
 
     def add_heir(self):
         self.plan["people"]["heirs"].append({})
@@ -2285,18 +2287,16 @@ class Wizard:
             key, self.vault_intake["answers"].get(key, ""))))
         if kind == "choice":
             for value, label in options:
-                tk.Radiobutton(card, text=label, value=value, variable=self.intake_value,
-                               font=F_BODY, bg=WHITE, activebackground=WHITE, selectcolor=PAPER2,
-                               anchor="w", justify="left", wraplength=620).pack(anchor="w", padx=20, pady=6)
+                ui.radio_row(card, label, self.intake_value, value,
+                             bg="card", font=F_BODY, wraplength=620).pack(anchor="w", padx=20, pady=6)
         else:
             answer_entry = tk.Entry(card, textvariable=self.intake_value, font=F_BODY, bg=WHITE, fg=INK,
                                     relief="solid", bd=1)
             answer_entry.pack(fill="x", padx=20, pady=(0, 8))
             answer_entry.bind("<Return>", lambda _event: (self.advance_vault_intake(), "break")[1])
             if kind == "number":
-                tk.Radiobutton(card, text="I’m not sure", value="unsure", variable=self.intake_value,
-                               font=F_BODY, bg=WHITE, activebackground=WHITE, selectcolor=PAPER2,
-                               anchor="w").pack(anchor="w", padx=20, pady=(0, 16))
+                ui.radio_row(card, "I’m not sure", self.intake_value, "unsure",
+                             bg="card", font=F_BODY, wraplength=620).pack(anchor="w", padx=20, pady=(0, 16))
         vault = self.vault_intake["vault"]
         summary = tk.LabelFrame(pad, text="  YOUR WALLET SUMMARY  ", font=F_MONO,
                                 bg=WHITE, fg=INK, relief="solid", bd=1)
@@ -2478,9 +2478,9 @@ class Wizard:
         trow = tk.Frame(inner, bg=WHITE)
         trow.pack(fill="x")
         for val, lab in [("no", "No timelock"), ("yes", "Has timelock")]:
-            tk.Radiobutton(trow, text=lab, value=val, variable=tlv, font=themes.F("Helvetica", 10),
-                           bg=WHITE, activebackground=WHITE, selectcolor=WHITE,
-                           command=lambda: self._set_timelock(v, tlv.get())).pack(side="left", padx=(0, 16))
+            ui.radio_row(trow, lab, tlv, val, bg="card", font=themes.F("Helvetica", 10),
+                         wraplength=0,
+                         command=lambda: self._set_timelock(v, tlv.get())).pack(side="left", padx=(0, 16))
         if tl.get("enabled"):
             tk.Label(inner, text="TIMELOCK DETAILS", font=themes.F("Courier", 8), bg=WHITE,
                      fg=HINT, anchor="w").pack(anchor="w", pady=(6, 0))
@@ -2570,9 +2570,9 @@ class Wizard:
                  "\u201cback up\u201d your way into a spendable set in one building.")
         row("Seed-passphrase backup status (never enter the passphrase)", "passphrase", PASSPHRASE,
             "Choose only where it is stored. Never type seed words or the actual seed passphrase into this tool.")
-        tk.Button(fr, text="REMOVE", font=themes.F("Courier", 8), bg=PAPER, fg=FLAG, relief="flat", cursor="hand2",
-                  command=lambda: (vault["keys"].pop(ki), self.mark_dirty(),
-                                   self.draw_vaults())).pack(anchor="e", padx=10, pady=(0, 6))
+        ui.btn_danger(fr, "REMOVE", bg="paper",
+                      command=lambda: (vault["keys"].pop(ki), self.mark_dirty(),
+                                       self.draw_vaults())).pack(anchor="e", padx=10, pady=(0, 6))
 
     # ---- folio 04 ---------------------------------------------------------
     def page_signing(self):
@@ -2638,9 +2638,9 @@ class Wizard:
                                       "Wallet descriptor export (BSMS / Core / Sparrow)"], width=26)
             cb.grid(row=2, column=1, sticky="ew", padx=8)
             cb.bind("<<ComboboxSelected>>", lambda *_: (d.__setitem__("format", v2.get()), self.mark_dirty()))
-            tk.Button(fr, text="✕", font=themes.F("Courier", 9), bg=WHITE, fg=FLAG, relief="flat", cursor="hand2",
-                      command=lambda i=i: (self.plan["backups"]["descriptorLocations"].pop(i),
-                                           self.mark_dirty(), self.draw_dlocs())).grid(row=2, column=2, padx=8)
+            ui.btn_danger(fr, "✕", bg="card", font=themes.F("Courier", 9), padx=6, pady=2,
+                          command=lambda i=i: (self.plan["backups"]["descriptorLocations"].pop(i),
+                                               self.mark_dirty(), self.draw_dlocs())).grid(row=2, column=2, padx=8)
             fr.columnconfigure(0, weight=3)
             fr.columnconfigure(1, weight=2)
 
@@ -2721,9 +2721,8 @@ class Wizard:
                      "VAULTFOLIO/2 encryption and encrypted-file writer, but does not prove a safe operating system. "
                      "Test files are marked and rejected by normal mode. No YubiKey actions are available here.",
                      font=F_BODY, bg=PAPER, fg=INK, justify="left", wraplength=620).pack(anchor="w", pady=8)
-            tk.Button(pad, text="SAVE SYNTHETIC TEST FILE", font=F_MONO_B, bg=INK, fg=PAPER,
-                      relief="flat", padx=14, pady=8,
-                      command=lambda: save_synthetic_test_flow(self.app, self.plan)).pack(anchor="w", pady=12)
+            ui.btn_primary(pad, "SAVE SYNTHETIC TEST FILE",
+                           lambda: save_synthetic_test_flow(self.app, self.plan)).pack(anchor="w", pady=12)
         else:
             self.note(pad, "Choose any independent unlock methods for this guide. Give a passphrase or enrolled YubiKey "
                            "to your lawyer if desired. Keep the program, encrypted file, and non-secret discovery instructions "

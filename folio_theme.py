@@ -172,6 +172,19 @@ def current_theme():
     return _current
 
 
+def set_button_style(name, app):
+    """Switch the button look for this session and rebuild the current screen.
+
+    Session-only, like the theme and text size: nothing is written to disk."""
+    import folio_ui as ui
+    if name == ui.button_style():
+        return
+    ui.set_button_style(name)
+    rebuild = getattr(app, "screen_rebuilder", None)
+    if rebuild:
+        rebuild()
+
+
 def _rescale_font(spec, old, new, root):
     """Return a font spec rescaled from old factor to new, or None to skip.
 
@@ -298,6 +311,18 @@ def open_settings(app):
         for role in ("paper", "card", "ink", "flag", "ok"):
             tk.Frame(swatches, bg=theme["colors"][role], width=16, height=16,
                      highlightthickness=1, highlightbackground=theme["colors"]["line"]).pack(side="left", padx=1)
+    tk.Label(pad, text="BUTTONS", font=ui.F_MONO_B,
+             bg=ui.PAPER, fg=ui.INK).pack(anchor="w", pady=(18, 2))
+    tk.Label(pad, text="Browser style draws flat ink buttons inside the app — recommended: it looks the same "
+             "on every computer, and macOS cannot draw the classic buttons correctly. Classic uses the "
+             "operating system's own buttons. Applies for this session only.",
+             font=ui.F_SMALL, bg=ui.PAPER, fg=ui.BODY_TEXT, wraplength=500,
+             justify="left").pack(anchor="w", pady=(0, 6))
+    style_var = tk.StringVar(value=ui.button_style())
+    for key, label in (("flat", "Browser style — flat ink buttons (default)"),
+                       ("classic", "Classic — operating system buttons")):
+        ui.radio_row(pad, label, style_var, key, bg="paper", font=ui.F_BODY, wraplength=440,
+                     command=lambda: set_button_style(style_var.get(), app)).pack(anchor="w", pady=2)
     tk.Label(pad, text="TEXT SIZE (INTERFACE SCALE)", font=ui.F_MONO_B,
              bg=ui.PAPER, fg=ui.INK).pack(anchor="w", pady=(18, 2))
     tk.Label(pad, text="Makes every word in the app larger or smaller. 1.0 is the designed size; "
