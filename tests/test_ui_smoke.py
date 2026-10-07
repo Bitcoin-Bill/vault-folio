@@ -623,5 +623,34 @@ class WheelScrollTests(unittest.TestCase):
         self.app.update_idletasks()
 
 
+@unittest.skipUnless(DISPLAY, "needs a display (xvfb-run)")
+class SettingsDialogTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.vf = load_app_module()
+        cls.app = cls.vf.App(test_mode=True)
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.destroy()
+
+    @staticmethod
+    def _walk(widget):
+        yield widget
+        for child in widget.winfo_children():
+            yield from SettingsDialogTests._walk(child)
+
+    def test_settings_dialog_scrolls_and_fits_the_screen(self):
+        dialog = self.vf.themes.open_settings(self.app)
+        self.app.update_idletasks()
+        sheets = [w for w in self._walk(dialog)
+                  if isinstance(w, self.vf.ui.ScrollFrame)]
+        self.assertTrue(sheets, "settings dialog content is not scrollable")
+        self.assertLessEqual(dialog.winfo_height(), dialog.winfo_screenheight() - 40)
+        dialog.destroy()
+        self.app.update_idletasks()
+
+
 if __name__ == "__main__":
     unittest.main()

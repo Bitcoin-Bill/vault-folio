@@ -288,8 +288,11 @@ def open_settings(app):
     dialog.transient(app)
     dialog.grab_set()
     dialog.configure(bg=ui.PAPER)
-    pad = tk.Frame(dialog, bg=ui.PAPER)
-    pad.pack(fill="both", expand=True, padx=24, pady=20)
+    # The dialog content (themes + button style + scale) can exceed a small
+    # screen; put it in a scrolling sheet with a bounded window size.
+    sheet = ui.ScrollFrame(dialog, bg=ui.PAPER)
+    sheet.pack(fill="both", expand=True, padx=24, pady=20)
+    pad = sheet.inner
     tk.Label(pad, text="INTERFACE SETTINGS", font=ui.F_MONO_B,
              bg=ui.PAPER, fg=ui.INK).pack(anchor="w")
     tk.Label(pad, text="Changes apply for this session only. Nothing is saved. The gate and lock screen keep their fixed appearance.",
@@ -340,7 +343,9 @@ def open_settings(app):
     scale.pack(side="left", padx=6)
     tk.Label(scale_row, text="2.4", font=ui.F_SMALL, bg=ui.PAPER, fg=ui.HINT).pack(side="left")
     ttk.Button(pad, text="Close", command=dialog.destroy).pack(anchor="e", pady=(14, 0))
-    ui.center_window(dialog, app)
+    width = min(720, dialog.winfo_screenwidth() - 60)
+    height = min(660, dialog.winfo_screenheight() - 80)
+    ui.center_window(dialog, app, width, height)
     return dialog
 
 
