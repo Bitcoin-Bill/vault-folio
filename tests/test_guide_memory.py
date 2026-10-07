@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 sys.dont_write_bytecode = True
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from folio_beneficiary import recovery_steps, visible_plan
+from folio_beneficiary import recovery_steps, visible_plan, big_picture
 from folio_catalog import extra_runbook, record_fields, ensure_sections
 import folio_memory as memory
 
@@ -39,6 +39,59 @@ class GuideTests(unittest.TestCase):
         ensure_sections(old)
         self.assertEqual(old['accessRecords'],[])
         self.assertEqual(old['instructions'],[])
+
+    def test_big_picture_keeps_mixed_wallet_routes_distinct(self):
+        plan = {'vaults': [
+            {'name': 'Wallet A', 'm': 1, 'n': 1, 'coordinator': 'Software A'},
+            {'name': 'Wallet B', 'm': 2, 'n': 3, 'coordinator': 'Software B'},
+            {'name': 'Wallet C'}]}
+        stages = big_picture(plan)
+        boxes = [b for stage in stages for b in stage['boxes']]
+        software = next(b for b in boxes if b['icon'] == 'laptop')
+        self.assertIn('Wallet A: Software A', software['detail'])
+        self.assertIn('Wallet B: Software B', software['detail'])
+        self.assertIn('Wallet C: not recorded', software['detail'])
+        self.assertIn('needs 1 of 1', boxes[1]['detail'])
+        self.assertIn('needs 2 of 3', boxes[2]['detail'])
+        self.assertIn('not recorded', boxes[3]['detail'])
+        sign = next(b for b in boxes if b['icon'] == 'sign')
+        self.assertIn('Each wallet', sign['detail'])
+        self.assertNotIn('any 1', sign['detail'])
+
+    def test_big_picture_derives_chain_from_plan(self):
+        """The visual overview is pure presentation: stages come from recorded
+        facts, gaps stay explicit, and no plan data is required to exist."""
+        stages = big_picture(self.plan)  # no vaults recorded
+        self.assertEqual(stages[0]['boxes'][0]['icon'], 'guide')
+        self.assertIn('No wallet recorded',
+                      [b['title'] for s in stages for b in s['boxes']])
+        self.assertEqual([s['boxes'][0]['title'] for s in stages[-2:]],
+                         ['Rebuild the wallet', 'Sign'])
+        self.plan['vaults'] = [{'name': 'Multisig savings', 'm': 2, 'n': 3,
+                                'coordinator': 'Sparrow',
+                                'keys': [{'label': 'Coldcard A', 'medium': 'Steel / metal plate',
+                                          'locations': 'home safe'},
+                                         {'label': 'Jade B'}, {}]}]
+        self.plan['backups'] = {'descriptorLocations': [{'where': 'bank box'}]}
+        stages = big_picture(self.plan)
+        gather = stages[1]
+        self.assertEqual(gather['joiner'], '+')
+        self.assertEqual(len(gather['boxes']), 4)  # vault box + three keys
+        self.assertEqual(gather['boxes'][0]['detail'], 'needs 2 of 3 keys to spend')
+        self.assertEqual(gather['boxes'][1]['detail'], 'Steel / metal plate · home safe')
+        self.assertEqual(gather['boxes'][2]['detail'], 'backup and location not recorded')
+        self.assertEqual(gather['boxes'][3]['title'], 'Key 3')
+        titles = [b['title'] for s in stages for b in s['boxes']]
+        self.assertIn('Sparrow', titles)
+        self.assertIn('The wallet map', titles)
+        map_box = next(b for s in stages for b in s['boxes'] if b['title'] == 'The wallet map')
+        self.assertEqual(map_box['detail'], '1 recorded copy location(s)')
+        sign_stage = stages[-1]
+        self.assertEqual(sign_stage['joiner'], '→')
+        self.assertEqual(sign_stage['boxes'][0]['detail'], 'any 2 of the 3 keys approve')
+        for stage in stages:
+            for box in stage['boxes']:
+                self.assertTrue(box['about'], 'every box needs a plain-language explanation')
 
 
 class MemoryTests(unittest.TestCase):
