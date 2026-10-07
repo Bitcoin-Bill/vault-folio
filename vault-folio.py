@@ -1729,6 +1729,7 @@ class Wizard:
     def back(self):
         if STEP_DEFS[self.step][0] == "vaults" and self.vault_intake is not None:
             if self.vault_intake["index"] > 0:
+                self.stash_vault_intake_answer()
                 self.vault_intake["index"] -= 1
                 self.render()
             elif messagebox.askyesno(APP_NAME, "Discard this unfinished wallet interview?"):
@@ -1762,10 +1763,7 @@ class Wizard:
     def to_heir(self):
         """Preview the guide as the family will see it, without losing edits."""
         was_dirty = self.app.dirty
-        if self.vault_intake is not None and getattr(self, "intake_value", None) is not None:
-            # A half-typed interview answer lives only in the widget, which the
-            # heir view is about to destroy. Stash it so the round trip keeps it.
-            self.vault_intake["pending"] = self.intake_value.get()
+        self.stash_vault_intake_answer()
 
         def back_to_editor():
             self._build_chrome()  # same wizard: step, interview and edits intact
@@ -1785,6 +1783,14 @@ class Wizard:
         self.app.active_plan = self.plan
         self.app.dirty = False
         self.render()
+
+    def stash_vault_intake_answer(self):
+        """Keep uncommitted widget text in memory, separately for each question."""
+        if self.vault_intake is not None and getattr(self, "intake_value", None) is not None:
+            questions = self.vault_intake_questions()
+            idx = min(self.vault_intake["index"], len(questions) - 1)
+            key = questions[idx][0]
+            self.vault_intake.setdefault("pending", {})[key] = self.intake_value.get()
 
     def mark_dirty(self, *_):
         self.app.dirty = True
@@ -1825,8 +1831,9 @@ class Wizard:
 
         def block(event=None):
             if event is not None:
-                if (event.state & 0x4) or event.keysym in _NAV_KEYS:
-                    return None  # copy/select combos and navigation still work
+                if event.keysym in _NAV_KEYS or (
+                        event.state & 0x4 and event.keysym in {"c", "C", "Insert"}):
+                    return None  # only copy combos and navigation pass through
             warn()
             return "break"
 
@@ -2201,7 +2208,7 @@ class Wizard:
                  "coordinator": "", "timelock": {"enabled": False, "delay": ""}, "keys": [],
                  "intakeAnswers": {}}
         self.plan["vaults"].append(vault)
-        self.vault_intake = {"vault": vault, "answers": vault["intakeAnswers"], "index": 0}
+        self.vault_intake = {"vault": vault, "answers": vault["intakeAnswers"], "index": 0, "pending": {}}
         for i, button in enumerate(self.step_buttons):
             button.configure(state=("normal" if i == self.step else "disabled"))
         self.mark_dirty()
@@ -2274,9 +2281,9 @@ class Wizard:
                  wraplength=640).pack(anchor="w", padx=20, pady=(2, 8))
         tk.Label(card, text=help_text, font=F_BODY, bg=WHITE, fg=BODY_TEXT, anchor="w", justify="left",
                  wraplength=640).pack(anchor="w", padx=20, pady=(0, 18))
-        pending = self.vault_intake.get("pending")  # half-typed answer kept across an heir-view round trip
-        self.intake_value = tk.StringVar(value=str(pending if pending is not None
-                                                   else self.vault_intake["answers"].get(key, "")))
+        pending = self.vault_intake.setdefault("pending", {})
+        self.intake_value = tk.StringVar(value=str(pending.get(
+            key, self.vault_intake["answers"].get(key, ""))))
         if kind == "choice":
             for value, label in options:
                 tk.Radiobutton(card, text=label, value=value, variable=self.intake_value,
@@ -2333,7 +2340,7 @@ class Wizard:
         answers = self.vault_intake["answers"]
         old_value = answers.get(key)
         answers[key] = answer
-        self.vault_intake.pop("pending", None)  # committed now; no longer pending
+        self.vault_intake.setdefault("pending", {}).pop(key, None)  # only this answer was committed
         vault = self.vault_intake["vault"]
         resolved = answers.get("structure_detail") if answers.get("structure") == "unsure" else answers.get("structure")
         if key == "structure" and old_value != answer:
