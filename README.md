@@ -74,10 +74,9 @@ Contacts, family clues and custody structure still deserve privacy.
 
 ## Create and open a guide
 
-Choose **START THE GUIDE** for a plain-language setup interview, one question at
-a time. It branches for single-key, multisignature, and uncertain setups; records
-backup-copy arrangements, contacts and recovery-path information; and carries
-those answers into the detailed editor. Unknown answers remain unknown.
+Choose **START THE GUIDE** to open the guide’s sheets directly. Answer what you
+can across the nine folios; unknown answers stay unknown, and the risk review
+flags every gap before you encrypt and export.
 
 After decrypting a saved file, choose **HEIR VIEW** or **EDITOR VIEW**:
 
@@ -200,7 +199,6 @@ vault-folio.py            the offline desktop app (live Linux required for RAM m
 folio_security.py         version-2 alternative-method envelope
 folio_hardware_ui.py      desktop enrollment / unlock flow
 folio_catalog.py          editable questionnaire catalog and fields
-folio_phase1.py           branching plain-language setup interview
 folio_theme.py            interface themes, font scaling and appearance controls
 folio_ui.py               shared desktop widgets and scrolling
 folio_synthetic.py        marked synthetic test-file handling

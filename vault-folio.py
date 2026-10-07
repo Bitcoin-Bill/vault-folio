@@ -65,7 +65,6 @@ from folio_hardware_ui import add_export_controls, open_hardware
 from folio_security import MAGIC as HARDWARE_MAGIC
 from folio_security import reseal_preserving_methods
 from folio_storage import save_encrypted
-from folio_phase1 import start_phase1
 from folio_synthetic import TEST_MARKER, load_synthetic_plan, save_synthetic_plan
 
 APP_NAME = "Vault Folio"
@@ -1372,10 +1371,10 @@ def home_screen(app):
     )
     action(
         "Start a guide",
-        "Answer a short interview, then complete the guide’s sheets." if not app.test_mode else
-        "Use invented answers to try the questionnaire and save flow.",
+        "Nine plain sheets. Answer what you can — the risk review flags what is missing." if not app.test_mode else
+        "Use invented answers to try the sheets and save flow.",
         "START TEST GUIDE" if app.test_mode else "START THE GUIDE",
-        lambda: start_phase1(app, lambda plan: start_wizard(app, plan), lambda: home_screen(app)),
+        lambda: start_wizard(app, blank_plan()),
         False,
     )
 
@@ -2009,7 +2008,7 @@ class Wizard:
         for r in rules:
             fr = tk.Frame(pad, bg=PAPER, highlightthickness=1, highlightbackground=LINE)
             fr.pack(fill="x", pady=2)
-            tk.Label(fr, text="□  " + r, font=F_BODY, bg=PAPER, fg=INK, anchor="w",
+            tk.Label(fr, text="–  " + r, font=F_BODY, bg=PAPER, fg=INK, anchor="w",
                      justify="left", wraplength=620).pack(padx=12, pady=8, anchor="w")
         self.note(pad, "Estimated time: 30–60 minutes if your setup exists; longer if this questionnaire "
                        "reveals it is still a story. That is the point of the exercise.")
@@ -2751,7 +2750,7 @@ class Wizard:
                      "With the attorney, attached to the estate documents",
                      "On the watch-only machine, next to the descriptor copies",
                      "In at least one geographically separate location"]:
-            tk.Label(pad, text="□  " + item, font=F_BODY, bg=PAPER, fg=INK, anchor="w").pack(anchor="w", pady=2)
+            tk.Label(pad, text="–  " + item, font=F_BODY, bg=PAPER, fg=INK, anchor="w").pack(anchor="w", pady=2)
         tk.Label(pad, text="To update the plan later: reopen this app, open your encrypted file, edit, and "
                            "export a fresh sealed copy. Saving briefly creates an encrypted temporary sibling "
                            "beside the chosen file for atomic replacement.",
