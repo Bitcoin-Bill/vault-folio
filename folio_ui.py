@@ -92,8 +92,11 @@ def install_scrolling(root):
                     inner.yview_scroll(direction * 3, "units")  # three lines per notch
             elif sheet is not None:
                 scroll_sheet(sheet, pixels)
-            else:
-                inner.yview_scroll(direction * 3 if direction else int(pixels / 16) or 1, "units")
+            # At a boundary with no sheet beneath, consume the event without
+            # moving. A truncation fallback here (int(pixels/16) or 1) once
+            # turned small upward trackpad scrolls into +1 — downward —
+            # movement at the top of the heir navigation list. Zero-delta
+            # events land here too and must likewise do nothing.
         elif sheet is not None:
             scroll_sheet(sheet, pixels)
         if inner is not None or sheet is not None:

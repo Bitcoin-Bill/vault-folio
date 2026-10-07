@@ -840,3 +840,48 @@ class ScrollAndComboBehaviorTests(unittest.TestCase):
         cb.insert(0, "my own words")
         self.assertEqual(var.get(), "my own words")
         cb.destroy()
+
+    def test_small_upward_wheel_at_list_top_does_not_move_down(self):
+        """Regression: a truncation fallback turned mac-style small upward
+        trackpad scrolls into +1 (downward) movement at the top of a list
+        with no sheet beneath it (PR #33 review finding, folio_ui roll())."""
+        import tkinter as tk
+        self.app.clear()
+        lb = tk.Listbox(self.app, height=6)
+        for i in range(100):
+            lb.insert("end", f"item {i}")
+        lb.pack()
+        self.app.update_idletasks()
+        self.assertEqual(lb.yview()[0], 0.0)
+        for _ in range(5):
+            lb.event_generate("<MouseWheel>", delta=1, x=5, y=5)  # small upward
+            self.app.update_idletasks()
+        self.assertEqual(lb.yview()[0], 0.0,
+                         "upward scroll at the top moved the list DOWN")
+
+    def test_zero_delta_wheel_is_consumed_without_moving(self):
+        import tkinter as tk
+        self.app.clear()
+        lb = tk.Listbox(self.app, height=6)
+        for i in range(100):
+            lb.insert("end", f"item {i}")
+        lb.pack()
+        lb.yview_moveto(0.5)
+        self.app.update_idletasks()
+        before = lb.yview()
+        lb.event_generate("<MouseWheel>", delta=0, x=5, y=5)
+        self.app.update_idletasks()
+        self.assertEqual(lb.yview(), before, "zero-delta event moved the list")
+
+    def test_small_downward_wheel_still_scrolls_list(self):
+        import tkinter as tk
+        self.app.clear()
+        lb = tk.Listbox(self.app, height=6)
+        for i in range(100):
+            lb.insert("end", f"item {i}")
+        lb.pack()
+        self.app.update_idletasks()
+        for _ in range(3):
+            lb.event_generate("<MouseWheel>", delta=-1, x=5, y=5)  # small downward
+            self.app.update_idletasks()
+        self.assertGreater(lb.yview()[0], 0.0, "downward scroll no longer works")
